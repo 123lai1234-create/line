@@ -12,3 +12,21 @@ id = "IzlONwfHkPlmV6IqGUKFS"
 uri = "file://attached_assets/screenshots/b6f4ddb7-622f-4141-98d4-8e2f60059ab9-00-10x8gz8oemofu_kirk_replit_dev_mockup_preview_line-cards_TabbedMenu.png"
 type = "image"
 title = "頁籤式主選單設計稿"
+
+[[outputs]]
+id = "ToC3xCXROh5PG0n3O5WxF"
+uri = "file://attached_assets/screenshots/b6f4ddb7-622f-4141-98d4-8e2f60059ab9-00-10x8gz8oemofu_kirk_replit_dev_mockup_preview_line-cards_Hero.png"
+type = "image"
+title = "A · Hero 導覽版"
+
+[[outputs]]
+id = "-wLkh1EHWUIsg6LK18as8"
+uri = "file://attached_assets/screenshots/b6f4ddb7-622f-4141-98d4-8e2f60059ab9-00-10x8gz8oemofu_kirk_replit_dev_mockup_preview_line-cards_Segmented.png"
+type = "image"
+title = "B · 分段清單版"
+
+[[outputs]]
+id = "SwSp-V6k4xC3KRtbW5Bvl"
+uri = "file://attached_assets/screenshots/b6f4ddb7-622f-4141-98d4-8e2f60059ab9-00-10x8gz8oemofu_kirk_replit_dev_mockup_preview_line-cards_Bento.png"
+type = "image"
+title = "C · Bento 色塊版"
