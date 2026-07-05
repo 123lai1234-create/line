@@ -1,4 +1,4 @@
-import { textMessage, type LineMessage, type QuickItem } from "./flex";
+import { textMessage, quickReply, type LineMessage, type QuickItem } from "./flex";
 import { weatherMenu } from "./weather";
 import { stockMenu } from "./stock";
 import { musicMenu } from "./music";
@@ -20,8 +20,8 @@ interface Service {
 }
 
 const SERVICES: Service[] = [
-  { emoji: "🤿", title: "潛水天氣", subtitle: "各潛點即時海況與更多數據", action: "潛水天氣" },
-  { emoji: "📈", title: "股票快報", subtitle: "即時股價、漲跌與市場數據", action: "股票快報" },
+  { emoji: "🤿", title: "潛水天氣", subtitle: "龍洞即時浪況與 GO/CAUTION 判斷", action: "潛水天氣" },
+  { emoji: "📈", title: "股票快報", subtitle: "台股大盤與代表個股即時報價", action: "股票快報" },
   { emoji: "🎧", title: "音樂欣賞", subtitle: "我發表音樂與創作的平台", action: "音樂欣賞" },
   { emoji: "🧬", title: "專案介紹", subtitle: "我的作品集與專案", action: "專案介紹" },
 ];
@@ -99,6 +99,13 @@ function isMenuTrigger(t: string): boolean {
   return /^(選單|主選單|menu|hi|hello|哈囉|你好|嗨|\?|？|幫助|help|開始|start)$/i.test(t);
 }
 
+function withMenu(messages: LineMessage[]): LineMessage[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  if (!last.quickReply) last.quickReply = quickReply(MAIN_MENU_ITEMS);
+  return messages;
+}
+
 export async function routeMessage(raw: string, ctx: RouteContext): Promise<LineMessage[]> {
   const text = raw.trim();
 
@@ -107,12 +114,12 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
   }
 
-  if (/潛水|海況|天氣|浪|潛點|綠島|蘭嶼|墾丁|後壁湖|小琉球|龍洞|東北角|澎湖/.test(text)) {
-    return weatherMenu();
+  if (/潛水|海況|天氣|浪|風浪|潛點|綠島|蘭嶼|墾丁|後壁湖|小琉球|龍洞|東北角|澎湖/.test(text)) {
+    return withMenu(await weatherMenu());
   }
 
-  if (/股票|股價|報價|快報|台積|^[A-Za-z]{1,5}$|^\d{4,6}(\.\w+)?$/i.test(text)) {
-    return stockMenu();
+  if (/股票|股價|報價|快報|台積|大盤|加權|^[A-Za-z]{1,5}$|^\d{4,6}(\.\w+)?$/i.test(text)) {
+    return withMenu(await stockMenu());
   }
 
   if (/音樂|歌|聽|music|song/i.test(text)) {

@@ -3,3 +3,4 @@
 - [SVG/CJK rasterization](svg-cjk-rasterization.md) — resvg-js renders Chinese as tofu (only reads format-4 cmap); use @napi-rs/canvas for CJK image generation.
 - [Broadcast testing safety](broadcast-testing.md) — POST /api/broadcasts sends to real LINE friends instantly; only test rejections or future-scheduled rows, then delete them.
 - [LINE bot hosting & webhook wiring](line-bot-hosting.md) — published bot silent? repoint webhook to prod URL + use vm (not autoscale) for webhook+scheduler.
+- [Portfolio bot live-data sourcing](portfolio-bot-live-data.md) — 股票/風浪 replies fetch upstream public APIs (Open-Meteo, Yahoo) directly, not the owner's site (its backend is often down); TW 紅漲綠跌; 龍洞 offshore=西風=NO-GO.
