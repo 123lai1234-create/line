@@ -33,6 +33,27 @@ const SERVICES: Service[] = [
 ];
 
 const S = Object.fromEntries(SERVICES.map((s) => [s.title, s])) as Record<string, Service>;
+const TOOLS = [S["潛水海況"], S["股票走勢"]];
+const CREATIONS = [S["音樂欣賞"], S["蛋白質設計"], S["專案介紹"]];
+
+export type MenuStyle = "bento" | "hero" | "seg";
+type SegTab = "tools" | "creations";
+
+// 圖示格:圓角色塊內放 emoji
+function iconChip(s: Service, size: string, chipBg: string): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    width: size,
+    height: size,
+    cornerRadius: "12px",
+    backgroundColor: chipBg,
+    justifyContent: "center",
+    alignItems: "center",
+    flex: 0,
+    contents: [{ type: "text", text: s.emoji, size: "lg", align: "center" }],
+  };
+}
 
 // 單塊 Bento 磚:代表色底、白色半透明圖示格、彩色標題 + 說明。feature=橫向大磚。
 function tile(s: Service, feature = false): LineMessage {
@@ -110,60 +131,250 @@ function footerCell(label: string, action: Record<string, unknown>): LineMessage
   };
 }
 
-export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
-  const bubbleContents: Record<string, unknown> = {
-    type: "bubble",
-    size: "mega",
-    body: {
-      type: "box",
-      layout: "vertical",
-      paddingAll: "20px",
-      spacing: "none",
-      contents: [
-        { type: "text", text: "MAIN MENU", size: "xs", weight: "bold", color: "#94A3B8" },
-        {
-          type: "text",
-          text: `你好,我是 ${botName}`,
-          size: "xl",
-          weight: "bold",
-          color: "#0F172A",
-          margin: "md",
-          wrap: true,
-        },
-        {
-          type: "text",
-          text: "選一個分類,或直接輸入指令。",
-          size: "sm",
-          color: "#64748B",
-          margin: "sm",
-          wrap: true,
-        },
-        sectionLabel("即時工具"),
-        tileRow(S["潛水海況"], S["股票走勢"]),
-        sectionLabel("創作作品"),
-        tile(S["音樂欣賞"], true),
-        tileRow(S["蛋白質設計"], S["專案介紹"]),
-      ],
-    },
-  };
-
-  const footerCells: LineMessage[] = [];
-  if (websiteUrl) {
-    footerCells.push(footerCell("前往網站", { type: "uri", label: "前往網站", uri: websiteUrl }));
-    footerCells.push({ type: "separator", color: "#E2E8F0" });
-  }
-  footerCells.push(footerCell("關於我", { type: "message", label: "關於我", text: "關於我" }));
-  bubbleContents.footer = {
+// 全寬清單列(圖示格 + 標題 + 說明 + ›),用於 Hero / 分段清單 樣式
+function listRow(s: Service): LineMessage {
+  return {
     type: "box",
     layout: "horizontal",
-    backgroundColor: "#F8FAFC",
-    contents: footerCells,
+    alignItems: "center",
+    spacing: "md",
+    paddingTop: "13px",
+    paddingBottom: "13px",
+    action: { type: "message", label: s.title, text: s.action },
+    contents: [
+      iconChip(s, "42px", s.bg),
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        contents: [
+          { type: "text", text: s.title, size: "md", weight: "bold", color: "#0F172A" },
+          { type: "text", text: s.desc, size: "xxs", color: "#94A3B8", margin: "xs", wrap: true },
+        ],
+      },
+      { type: "text", text: "›", size: "xl", color: "#CBD5E1", flex: 0, gravity: "center" },
+    ],
   };
+}
 
+function separatedRows(items: Service[]): LineMessage[] {
+  const out: LineMessage[] = [];
+  items.forEach((s, i) => {
+    if (i > 0) out.push({ type: "separator", color: "#F1F5F9" });
+    out.push(listRow(s));
+  });
+  return out;
+}
+
+// 樣式切換 chip 列(色塊 / 導覽 / 清單),目前樣式反白;其餘可點,送 postback 重繪
+function styleSwitcher(active: MenuStyle): LineMessage {
+  const chips: { key: MenuStyle; label: string }[] = [
+    { key: "bento", label: "色塊" },
+    { key: "hero", label: "導覽" },
+    { key: "seg", label: "清單" },
+  ];
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "12px",
+    paddingBottom: "0px",
+    spacing: "sm",
+    contents: [
+      { type: "text", text: "切換選單樣式", size: "xxs", weight: "bold", color: "#94A3B8" },
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        contents: chips.map((c) => {
+          const on = c.key === active;
+          const chip: LineMessage = {
+            type: "box",
+            layout: "vertical",
+            flex: 1,
+            cornerRadius: "8px",
+            paddingTop: "8px",
+            paddingBottom: "8px",
+            backgroundColor: on ? "#0F172A" : "#FFFFFF",
+            contents: [
+              {
+                type: "text",
+                text: c.label,
+                size: "xs",
+                weight: "bold",
+                align: "center",
+                color: on ? "#FFFFFF" : "#475569",
+              },
+            ],
+          };
+          if (!on) {
+            chip.borderWidth = "1px";
+            chip.borderColor = "#E2E8F0";
+            chip.action = {
+              type: "postback",
+              data: `s=menu&style=${c.key}`,
+              displayText: `切換為${c.label}樣式`,
+            };
+          }
+          return chip;
+        }),
+      },
+    ],
+  };
+}
+
+// 分段清單樣式的頁籤列:兩個標籤 + 選中底線;未選的點擊送 postback 切換分頁
+function segTabBar(active: SegTab): LineMessage {
+  const tabs: { key: SegTab; label: string; accent: string }[] = [
+    { key: "tools", label: "即時工具", accent: "#0EA5E9" },
+    { key: "creations", label: "創作作品", accent: "#7C3AED" },
+  ];
+  return {
+    type: "box",
+    layout: "horizontal",
+    margin: "lg",
+    contents: tabs.map((t) => {
+      const on = t.key === active;
+      const cell: LineMessage = {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "sm",
+        contents: [
+          {
+            type: "text",
+            text: t.label,
+            size: "sm",
+            weight: "bold",
+            align: "center",
+            color: on ? "#0F172A" : "#94A3B8",
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            height: "3px",
+            cornerRadius: "2px",
+            backgroundColor: on ? t.accent : "#00000000",
+            contents: [{ type: "filler" }],
+          },
+        ],
+      };
+      if (!on) {
+        cell.action = {
+          type: "postback",
+          data: `s=menu&style=seg&tab=${t.key}`,
+          displayText: `切換到${t.label}`,
+        };
+      }
+      return cell;
+    }),
+  };
+}
+
+function greetingBlock(botName: string, eyebrowColor = "#94A3B8", titleColor = "#0F172A", subColor = "#64748B"): LineMessage[] {
+  return [
+    { type: "text", text: "MAIN MENU", size: "xs", weight: "bold", color: eyebrowColor },
+    { type: "text", text: `你好,我是 ${botName}`, size: "xl", weight: "bold", color: titleColor, margin: "md", wrap: true },
+    { type: "text", text: "選一個分類,或直接輸入指令。", size: "sm", color: subColor, margin: "sm", wrap: true },
+  ];
+}
+
+function bentoBody(botName: string): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "20px",
+    spacing: "none",
+    contents: [
+      ...greetingBlock(botName),
+      sectionLabel("即時工具"),
+      tileRow(TOOLS[0], TOOLS[1]),
+      sectionLabel("創作作品"),
+      tile(CREATIONS[0], true),
+      tileRow(CREATIONS[1], CREATIONS[2]),
+    ],
+  };
+}
+
+function heroBody(botName: string): LineMessage {
+  const hero: LineMessage = {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "22px",
+    spacing: "none",
+    background: { type: "linearGradient", angle: "135deg", startColor: "#7C3AED", endColor: "#EC4899" },
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        cornerRadius: "20px",
+        backgroundColor: "#FFFFFF33",
+        paddingAll: "6px",
+        paddingStart: "12px",
+        paddingEnd: "12px",
+        flex: 0,
+        contents: [{ type: "text", text: "MAIN MENU", size: "xs", weight: "bold", color: "#FFFFFF" }],
+      },
+      { type: "text", text: `你好,我是 ${botName}`, size: "xl", weight: "bold", color: "#FFFFFF", margin: "lg", wrap: true },
+      { type: "text", text: "選一個分類,或直接輸入指令。", size: "sm", color: "#FFFFFFDD", margin: "sm", wrap: true },
+    ],
+  };
+  const sections: LineMessage = {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "20px",
+    spacing: "none",
+    contents: [
+      { ...sectionLabel("即時工具"), margin: "none" },
+      ...separatedRows(TOOLS),
+      sectionLabel("創作作品"),
+      ...separatedRows(CREATIONS),
+    ],
+  };
+  return { type: "box", layout: "vertical", paddingAll: "0px", spacing: "none", contents: [hero, sections] };
+}
+
+function segBody(botName: string, tab: SegTab): LineMessage {
+  const rows = tab === "tools" ? TOOLS : CREATIONS;
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "20px",
+    spacing: "none",
+    contents: [...greetingBlock(botName), segTabBar(tab), { type: "box", layout: "vertical", margin: "md", spacing: "none", contents: separatedRows(rows) }],
+  };
+}
+
+function menuFooter(active: MenuStyle, websiteUrl?: string): LineMessage {
+  const linkCells: LineMessage[] = [];
+  if (websiteUrl) {
+    linkCells.push(footerCell("前往網站", { type: "uri", label: "前往網站", uri: websiteUrl }));
+    linkCells.push({ type: "separator", color: "#E2E8F0" });
+  }
+  linkCells.push(footerCell("關於我", { type: "message", label: "關於我", text: "關於我" }));
+  return {
+    type: "box",
+    layout: "vertical",
+    backgroundColor: "#F8FAFC",
+    paddingBottom: "4px",
+    contents: [
+      styleSwitcher(active),
+      { type: "separator", color: "#E2E8F0", margin: "md" },
+      { type: "box", layout: "horizontal", contents: linkCells },
+    ],
+  };
+}
+
+export function mainMenu(
+  botName: string,
+  websiteUrl?: string,
+  style: MenuStyle = "bento",
+  tab: SegTab = "tools",
+): LineMessage[] {
+  const body = style === "hero" ? heroBody(botName) : style === "seg" ? segBody(botName, tab) : bentoBody(botName);
   const bubble: LineMessage = {
     type: "flex",
     altText: `${botName}・服務選單`,
-    contents: bubbleContents,
+    contents: { type: "bubble", size: "mega", body, footer: menuFooter(style, websiteUrl) },
     quickReply: quickReply(MAIN_MENU_ITEMS),
   };
   return [bubble];
@@ -188,6 +399,14 @@ function isMenuTrigger(t: string): boolean {
   return /^(選單|主選單|menu|hi|hello|哈囉|你好|嗨|\?|？|幫助|help|開始|start)$/i.test(t);
 }
 
+// 直接以文字指令叫出特定選單樣式
+function menuStyleByText(t: string): MenuStyle | null {
+  if (/^(色塊|bento|磚|磚牆)$/i.test(t)) return "bento";
+  if (/^(導覽|hero|banner|橫幅)$/i.test(t)) return "hero";
+  if (/^(清單|分段|列表|segment|list)$/i.test(t)) return "seg";
+  return null;
+}
+
 function withMenu(messages: LineMessage[]): LineMessage[] {
   if (messages.length === 0) return messages;
   const last = messages[messages.length - 1];
@@ -199,6 +418,8 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   const text = raw.trim();
 
   if (isMenuTrigger(text)) return mainMenu(ctx.botName, ctx.websiteUrl);
+  const styleCmd = menuStyleByText(text);
+  if (styleCmd) return mainMenu(ctx.botName, ctx.websiteUrl, styleCmd);
   if (/關於我|about|作者|你是誰|自我介紹/i.test(text)) {
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
   }
@@ -273,6 +494,14 @@ export async function routePostback(data: string, ctx: RouteContext): Promise<Li
     if (params.get("act") === "howto") return withMenu(proteinHowto());
     const step = Number.parseInt(params.get("step") ?? "1", 10);
     return withMenu(proteinGuide(Number.isFinite(step) ? step : 1));
+  }
+
+  // 切換主選單樣式(色塊 / 導覽 / 分段清單),分段清單另帶 tab
+  if (svc === "menu") {
+    const style = params.get("style");
+    const menuStyle: MenuStyle = style === "hero" || style === "seg" ? style : "bento";
+    const tab: SegTab = params.get("tab") === "creations" ? "creations" : "tools";
+    return mainMenu(ctx.botName, ctx.websiteUrl, menuStyle, tab);
   }
 
   // 未知 postback → 回主選單
