@@ -5,3 +5,4 @@
 - [LINE bot hosting & webhook wiring](line-bot-hosting.md) — published bot silent? repoint webhook to prod URL + use vm (not autoscale) for webhook+scheduler.
 - [Portfolio bot live-data sourcing](portfolio-bot-live-data.md) — 股票/風浪 replies fetch upstream public APIs (Open-Meteo, Yahoo) directly, not the owner's site (its backend is often down); TW 紅漲綠跌; 龍洞 offshore=西風=NO-GO.
 - [LINE bot flex UI](portfolio-bot-flex-ui.md) — Refined white-card bank style (user-approved): gray English eyebrows, hairline #F1F5F9, color only as signal, `dot`/`subtleLink` helpers; hero URL two-t gotcha; verify flex via esbuild+node (no tsx).
+- [Portfolio bot interactivity & routing](portfolio-bot-interactivity.md) — postback protocol `s=wx|stk|pro`; routeMessage keyword ORDER matters (專案-prefix before 蛋白 keyword); AA-seq detect regex.

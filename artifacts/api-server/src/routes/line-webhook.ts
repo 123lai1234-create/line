@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { verifyLineSignature, replyMessages } from "../lib/line";
-import { routeMessage, mainMenu } from "../lib/services/router";
+import { routeMessage, routePostback, mainMenu } from "../lib/services/router";
 import { ensureProfile } from "./profile";
 
 const router: IRouter = Router();
@@ -9,6 +9,7 @@ interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   message?: { type: string; text?: string };
+  postback?: { data?: string };
 }
 
 async function handleWebhookEvents(req: Request): Promise<void> {
@@ -31,6 +32,9 @@ async function handleWebhookEvents(req: Request): Promise<void> {
       await replyMessages(event.replyToken, mainMenu(profile.botName, profile.websiteUrl));
     } else if (event.type === "message" && event.message?.type === "text") {
       const messages = await routeMessage(event.message.text ?? "", ctx);
+      await replyMessages(event.replyToken, messages);
+    } else if (event.type === "postback" && event.postback?.data) {
+      const messages = await routePostback(event.postback.data, ctx);
       await replyMessages(event.replyToken, messages);
     }
   }

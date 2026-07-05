@@ -1,4 +1,4 @@
-import { fetchWithTimeout, subtleLink, type LineMessage } from "./flex";
+import { barChart, fetchWithTimeout, quickReply, subtleLink, type LineMessage, type QuickItem } from "./flex";
 
 const STOCK_URL = "https://donttalk.vercel.app/stock";
 
@@ -199,9 +199,8 @@ function stockCard(quotes: Quote[], updated: string): LineMessage {
   };
 }
 
-export async function stockMenu(): Promise<LineMessage[]> {
-  const quotes = await Promise.all(SYMBOLS.map((s) => fetchQuote(s.sym, s.name, s.code)));
-  const updated = new Date().toLocaleString("zh-TW", {
+function updatedNow(): string {
+  return new Date().toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei",
     month: "2-digit",
     day: "2-digit",
@@ -209,5 +208,200 @@ export async function stockMenu(): Promise<LineMessage[]> {
     minute: "2-digit",
     hour12: false,
   });
-  return [stockCard(quotes, updated)];
+}
+
+// 挑股票看走勢的 chips(postback)+ 提示可自行輸入代號
+function pickChips(): QuickItem[] {
+  return SYMBOLS.map((s) => ({
+    label: s.name,
+    data: `s=stk&sym=${s.sym}`,
+    displayText: `${s.name} 走勢`,
+  }));
+}
+
+// 把使用者輸入解析成代號:認名稱、4~6 位代號(自動補 .TW)
+export function resolveStock(text: string): { sym: string; name: string; code: string } | undefined {
+  const t = text.trim();
+  const byName = SYMBOLS.find((s) => t.includes(s.name) || t.includes(s.code));
+  if (byName) return byName;
+  const m = t.match(/(?:^|\D)(\d{4,6})(?:\.(?:TW|TWO))?(?:\D|$)/i);
+  if (m) {
+    const code = m[1];
+    return { sym: `${code}.TW`, name: code, code };
+  }
+  return undefined;
+}
+
+async function fetchSeries(sym: string): Promise<{ closes: number[]; meta: Record<string, unknown> } | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1mo`;
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      chart?: {
+        result?: {
+          meta?: Record<string, unknown>;
+          indicators?: { quote?: { close?: (number | null)[] }[] };
+        }[];
+      };
+    };
+    const r = data.chart?.result?.[0];
+    if (!r?.meta) return null;
+    const raw = r.indicators?.quote?.[0]?.close ?? [];
+    const closes = raw.filter((c): c is number => typeof c === "number" && Number.isFinite(c));
+    return { closes, meta: r.meta };
+  } catch {
+    return null;
+  }
+}
+
+function statCol(label: string, value: string, color = "#1E293B"): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    contents: [
+      { type: "text", text: label, size: "xxs", color: "#94A3B8" },
+      { type: "text", text: value, size: "sm", weight: "bold", color, margin: "xs" },
+    ],
+  };
+}
+
+function trendUnavailable(label: string): LineMessage {
+  return {
+    type: "flex",
+    altText: `${label} 走勢 — 資料抓不到`,
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "20px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: "PRICE TREND", size: "xs", weight: "bold", color: "#94A3B8" },
+          { type: "text", text: "找不到這檔的走勢資料", size: "lg", weight: "bold", color: "#0F172A", margin: "md" },
+          {
+            type: "text",
+            text: "請確認代號(例如 2330),或改輸入台積電、聯發科等名稱。",
+            size: "sm",
+            color: "#64748B",
+            wrap: true,
+            margin: "sm",
+          },
+        ],
+      },
+    },
+  };
+}
+
+export async function stockTrend(sym: string, name?: string, code?: string): Promise<LineMessage[]> {
+  const known = SYMBOLS.find((s) => s.sym === sym);
+  const dispName = name ?? known?.name ?? sym;
+  const dispCode = code ?? known?.code ?? sym.replace(/\.(TW|TWO)$/i, "");
+
+  const series = await fetchSeries(sym);
+  if (!series || series.closes.length < 2) return [trendUnavailable(dispName)];
+
+  const closes = series.closes.slice(-22); // 近一個月的交易日
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = max - min || 1;
+  const last = closes[closes.length - 1];
+  const first = closes[0];
+  const periodChange = last - first;
+  const periodPct = (periodChange / first) * 100;
+
+  const bars = closes.map((c, i) => {
+    const prev = i === 0 ? c : closes[i - 1];
+    const d = dirOf(c - prev);
+    const color = d === "up" ? "#DC2626" : d === "down" ? "#16A34A" : "#CBD5E1";
+    return { h: 12 + ((c - min) / span) * 88, color };
+  });
+
+  const periodColor = changeColor(periodChange);
+  const arrow = periodChange > 0 ? "▲" : periodChange < 0 ? "▼" : "－";
+  const sign = periodChange > 0 ? "+" : "";
+
+  const card: LineMessage = {
+    type: "flex",
+    altText: `${dispName} 走勢`,
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "20px",
+        spacing: "none",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            alignItems: "center",
+            contents: [
+              { type: "text", text: "PRICE TREND", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+              { type: "filler" },
+              { type: "text", text: "近一個月", size: "xxs", color: "#CBD5E1", align: "end" },
+            ],
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            alignItems: "flex-end",
+            margin: "lg",
+            contents: [
+              {
+                type: "box",
+                layout: "vertical",
+                flex: 0,
+                contents: [
+                  { type: "text", text: `${dispName}`, size: "xs", color: "#64748B" },
+                  { type: "text", text: fmtPrice(last), size: "xxl", weight: "bold", color: "#0F172A" },
+                ],
+              },
+              { type: "filler" },
+              {
+                type: "box",
+                layout: "vertical",
+                flex: 0,
+                contents: [
+                  { type: "text", text: `${arrow} ${sign}${periodChange.toFixed(2)}`, size: "sm", weight: "bold", color: periodColor, align: "end" },
+                  { type: "text", text: `${sign}${periodPct.toFixed(2)}%`, size: "xs", color: periodColor, align: "end" },
+                ],
+              },
+            ],
+          },
+          { type: "box", layout: "vertical", margin: "lg", contents: [barChart(bars)] },
+          { type: "separator", margin: "lg", color: "#F1F5F9" },
+          {
+            type: "box",
+            layout: "horizontal",
+            margin: "lg",
+            contents: [
+              statCol("代號", dispCode),
+              statCol("月高", fmtPrice(max), "#DC2626"),
+              statCol("月低", fmtPrice(min), "#16A34A"),
+            ],
+          },
+          { type: "text", text: `更新 ${updatedNow()}`, size: "xxs", color: "#CBD5E1", margin: "lg" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "12px",
+        paddingTop: "0px",
+        contents: [subtleLink("查看均線買賣訊號", STOCK_URL)],
+      },
+    },
+    quickReply: quickReply(pickChips()),
+  };
+  return [card];
+}
+
+export async function stockMenu(): Promise<LineMessage[]> {
+  const quotes = await Promise.all(SYMBOLS.map((s) => fetchQuote(s.sym, s.name, s.code)));
+  const card = stockCard(quotes, updatedNow());
+  card.quickReply = quickReply(pickChips());
+  return [card];
 }

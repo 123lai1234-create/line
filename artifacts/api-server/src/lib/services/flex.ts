@@ -16,14 +16,24 @@ export async function fetchWithTimeout(
 
 export interface QuickItem {
   label: string;
-  text: string;
+  // 一般訊息型 chip 用 text;需要帶隱藏資料回後端時改用 data(postback)。
+  text?: string;
+  data?: string;
+  displayText?: string;
 }
 
 export function quickReply(items: QuickItem[]): Record<string, unknown> {
   return {
     items: items.slice(0, 13).map((i) => ({
       type: "action",
-      action: { type: "message", label: i.label.slice(0, 20), text: i.text },
+      action: i.data
+        ? {
+            type: "postback",
+            label: i.label.slice(0, 20),
+            data: i.data,
+            displayText: (i.displayText ?? i.label).slice(0, 300),
+          }
+        : { type: "message", label: i.label.slice(0, 20), text: i.text ?? i.label },
     })),
   };
 }
@@ -32,6 +42,52 @@ export function textMessage(text: string, items?: QuickItem[]): LineMessage {
   const msg: LineMessage = { type: "text", text };
   if (items && items.length > 0) msg.quickReply = quickReply(items);
   return msg;
+}
+
+// 可點的清單列(標題 + 可選副標 + 右側 ›),點擊送出 postback。用於地點/股票挑選。
+export function pickRow(title: string, sub: string, data: string, displayText: string): LineMessage {
+  const titleBox: LineMessage[] = [
+    { type: "text", text: title, size: "md", weight: "bold", color: "#334155" },
+  ];
+  if (sub) titleBox.push({ type: "text", text: sub, size: "xxs", color: "#94A3B8", margin: "xs" });
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    paddingTop: "14px",
+    paddingBottom: "14px",
+    action: { type: "postback", data, displayText: displayText.slice(0, 300) },
+    contents: [
+      { type: "box", layout: "vertical", flex: 1, contents: titleBox },
+      { type: "text", text: "›", size: "xl", color: "#CBD5E1", flex: 0, gravity: "center" },
+    ],
+  };
+}
+
+// 迷你長條圖(走勢):在固定高度的橫向容器內,用 flex 比例畫出高低不一的彩色長條。
+export function barChart(bars: { h: number; color: string }[], heightPx = 132): LineMessage {
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "xs",
+    height: `${heightPx}px`,
+    alignItems: "flex-end",
+    contents: bars.map((b) => {
+      const bottom = Math.max(3, Math.min(100, Math.round(b.h)));
+      const top = 100 - bottom;
+      const col: LineMessage[] = [];
+      if (top > 0) col.push({ type: "filler", flex: top });
+      col.push({
+        type: "box",
+        layout: "vertical",
+        flex: bottom,
+        backgroundColor: b.color,
+        cornerRadius: "2px",
+        contents: [{ type: "filler" }],
+      });
+      return { type: "box", layout: "vertical", flex: 1, height: `${heightPx}px`, contents: col };
+    }),
+  };
 }
 
 export function kvRow(label: string, value: string): LineMessage {
