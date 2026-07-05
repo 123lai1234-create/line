@@ -30,3 +30,15 @@ id = "SwSp-V6k4xC3KRtbW5Bvl"
 uri = "file://attached_assets/screenshots/b6f4ddb7-622f-4141-98d4-8e2f60059ab9-00-10x8gz8oemofu_kirk_replit_dev_mockup_preview_line-cards_Bento.png"
 type = "image"
 title = "C · Bento 色塊版"
+
+[[outputs]]
+id = "iS9hblZsMNtCtb406MBG6"
+uri = "file://scripts/assets/richmenu-tools.png"
+type = "image"
+title = "頁籤 1:即時工具"
+
+[[outputs]]
+id = "1nsFvrZsGrHix3B0amkPx"
+uri = "file://scripts/assets/richmenu-creations.png"
+type = "image"
+title = "頁籤 2:創作作品"
