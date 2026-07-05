@@ -1,32 +1,139 @@
-import { barChart, fetchWithTimeout, quickReply, subtleLink, type LineMessage, type QuickItem } from "./flex";
+import {
+  barChart,
+  fetchWithTimeout,
+  pickRow,
+  quickReply,
+  subtleLink,
+  type LineMessage,
+  type QuickItem,
+} from "./flex";
 
 const STOCK_URL = "https://donttalk.vercel.app/stock";
 
-type StockCat = "index" | "large" | "etf";
+interface StockDef {
+  sym: string;
+  name: string;
+  code: string;
+}
 
-const SYMBOLS: { sym: string; name: string; code: string; cat: StockCat }[] = [
-  { sym: "^TWII", name: "加權指數", code: "TAIEX", cat: "index" },
-  // 權值股
-  { sym: "2330.TW", name: "台積電", code: "2330", cat: "large" },
-  { sym: "2317.TW", name: "鴻海", code: "2317", cat: "large" },
-  { sym: "2454.TW", name: "聯發科", code: "2454", cat: "large" },
-  { sym: "2308.TW", name: "台達電", code: "2308", cat: "large" },
-  { sym: "2382.TW", name: "廣達", code: "2382", cat: "large" },
-  { sym: "2303.TW", name: "聯電", code: "2303", cat: "large" },
-  { sym: "2412.TW", name: "中華電", code: "2412", cat: "large" },
-  { sym: "2881.TW", name: "富邦金", code: "2881", cat: "large" },
-  { sym: "2882.TW", name: "國泰金", code: "2882", cat: "large" },
-  { sym: "2603.TW", name: "長榮", code: "2603", cat: "large" },
-  // ETF
-  { sym: "0050.TW", name: "元大台灣50", code: "0050", cat: "etf" },
-  { sym: "0056.TW", name: "元大高股息", code: "0056", cat: "etf" },
-  { sym: "00878.TW", name: "國泰永續高股息", code: "00878", cat: "etf" },
+interface Sector {
+  label: string;
+  items: StockDef[];
+}
+
+const INDEX: StockDef = { sym: "^TWII", name: "加權指數", code: "TAIEX" };
+
+// 台灣 50 大公司(市值最大的 50 檔)+ 熱門 ETF,依產業分類供瀏覽點選
+const SECTORS: Sector[] = [
+  {
+    label: "半導體",
+    items: [
+      { sym: "2330.TW", name: "台積電", code: "2330" },
+      { sym: "2454.TW", name: "聯發科", code: "2454" },
+      { sym: "2303.TW", name: "聯電", code: "2303" },
+      { sym: "3711.TW", name: "日月光投控", code: "3711" },
+      { sym: "2379.TW", name: "瑞昱", code: "2379" },
+      { sym: "3034.TW", name: "聯詠", code: "3034" },
+      { sym: "3037.TW", name: "欣興", code: "3037" },
+      { sym: "3661.TW", name: "世芯-KY", code: "3661" },
+      { sym: "2408.TW", name: "南亞科", code: "2408" },
+    ],
+  },
+  {
+    label: "電子・網通",
+    items: [
+      { sym: "2317.TW", name: "鴻海", code: "2317" },
+      { sym: "2382.TW", name: "廣達", code: "2382" },
+      { sym: "2357.TW", name: "華碩", code: "2357" },
+      { sym: "2308.TW", name: "台達電", code: "2308" },
+      { sym: "4938.TW", name: "和碩", code: "4938" },
+      { sym: "2327.TW", name: "國巨", code: "2327" },
+      { sym: "3008.TW", name: "大立光", code: "3008" },
+      { sym: "2395.TW", name: "研華", code: "2395" },
+      { sym: "2377.TW", name: "微星", code: "2377" },
+      { sym: "3017.TW", name: "奇鋐", code: "3017" },
+      { sym: "2345.TW", name: "智邦", code: "2345" },
+      { sym: "6669.TW", name: "緯穎", code: "6669" },
+      { sym: "3231.TW", name: "緯創", code: "3231" },
+      { sym: "2412.TW", name: "中華電", code: "2412" },
+      { sym: "3045.TW", name: "台灣大", code: "3045" },
+      { sym: "4904.TW", name: "遠傳", code: "4904" },
+    ],
+  },
+  {
+    label: "金融",
+    items: [
+      { sym: "2881.TW", name: "富邦金", code: "2881" },
+      { sym: "2882.TW", name: "國泰金", code: "2882" },
+      { sym: "2891.TW", name: "中信金", code: "2891" },
+      { sym: "2886.TW", name: "兆豐金", code: "2886" },
+      { sym: "2884.TW", name: "玉山金", code: "2884" },
+      { sym: "2885.TW", name: "元大金", code: "2885" },
+      { sym: "2892.TW", name: "第一金", code: "2892" },
+      { sym: "2880.TW", name: "華南金", code: "2880" },
+      { sym: "2883.TW", name: "開發金", code: "2883" },
+      { sym: "2887.TW", name: "台新金", code: "2887" },
+      { sym: "2890.TW", name: "永豐金", code: "2890" },
+      { sym: "5880.TW", name: "合庫金", code: "5880" },
+    ],
+  },
+  {
+    label: "傳產・航運",
+    items: [
+      { sym: "2603.TW", name: "長榮", code: "2603" },
+      { sym: "2609.TW", name: "陽明", code: "2609" },
+      { sym: "2615.TW", name: "萬海", code: "2615" },
+      { sym: "1301.TW", name: "台塑", code: "1301" },
+      { sym: "1303.TW", name: "南亞", code: "1303" },
+      { sym: "1326.TW", name: "台化", code: "1326" },
+      { sym: "6505.TW", name: "台塑化", code: "6505" },
+      { sym: "2002.TW", name: "中鋼", code: "2002" },
+      { sym: "1216.TW", name: "統一", code: "1216" },
+      { sym: "2207.TW", name: "和泰車", code: "2207" },
+      { sym: "1101.TW", name: "台泥", code: "1101" },
+      { sym: "2912.TW", name: "統一超", code: "2912" },
+      { sym: "9910.TW", name: "豐泰", code: "9910" },
+    ],
+  },
+  {
+    label: "熱門 ETF",
+    items: [
+      { sym: "0050.TW", name: "元大台灣50", code: "0050" },
+      { sym: "0056.TW", name: "元大高股息", code: "0056" },
+      { sym: "00878.TW", name: "國泰永續高股息", code: "00878" },
+      { sym: "006208.TW", name: "富邦台50", code: "006208" },
+      { sym: "00919.TW", name: "群益台灣精選高息", code: "00919" },
+      { sym: "00929.TW", name: "復華台灣科技優息", code: "00929" },
+    ],
+  },
 ];
+
+// 全部個股(含 ETF)攤平,用於名稱/代號解析與顯示名稱回填
+const ALL: StockDef[] = SECTORS.flatMap((s) => s.items);
+
+// 第一頁「即時快報」顯示的頭條股(市值前段;只有這些會即時抓價)
+const HEADLINE_CODES = ["2330", "2317", "2454", "2308", "2891", "2382"];
+const HEADLINES: StockDef[] = HEADLINE_CODES.map((c) => ALL.find((s) => s.code === c)).filter(
+  (s): s is StockDef => Boolean(s),
+);
+
+// quick reply chip 用的熱門標的(LINE 上限 13 顆)
+const CHIP_CODES = [
+  "2330", "2317", "2454", "2308", "2891", "2882", "2603", "3711", "2412", "0050", "0056", "00878", "2379",
+];
+
+// 把陣列平均切成每份 ≤ max 的小塊(避免單一 bubble 超過 LINE flex ~10KB 上限)
+function chunk<T>(arr: T[], max: number): T[][] {
+  const parts = Math.max(1, Math.ceil(arr.length / max));
+  const size = Math.ceil(arr.length / parts);
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 interface Quote {
   name: string;
   code: string;
-  cat: StockCat;
   price: number | null;
   change: number | null;
   pct: number | null;
@@ -36,26 +143,26 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-async function fetchQuote(sym: string, name: string, code: string, cat: StockCat): Promise<Quote> {
+async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
     const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return { name, code, cat, price: null, change: null, pct: null };
+    if (!res.ok) return { name, code, price: null, change: null, pct: null };
     const data = (await res.json()) as {
       chart?: { result?: { meta?: Record<string, unknown> }[] };
     };
     const meta = data.chart?.result?.[0]?.meta;
-    if (!meta) return { name, code, cat, price: null, change: null, pct: null };
+    if (!meta) return { name, code, price: null, change: null, pct: null };
 
     const price = num(meta.regularMarketPrice);
     const prev = num(meta.chartPreviousClose) ?? num(meta.previousClose);
     if (price === null || prev === null || prev === 0) {
-      return { name, code, cat, price, change: null, pct: null };
+      return { name, code, price, change: null, pct: null };
     }
     const change = price - prev;
-    return { name, code, cat, price, change, pct: (change / prev) * 100 };
+    return { name, code, price, change, pct: (change / prev) * 100 };
   } catch {
-    return { name, code, cat, price: null, change: null, pct: null };
+    return { name, code, price: null, change: null, pct: null };
   }
 }
 
@@ -216,43 +323,44 @@ function stockBubble(contents: LineMessage[], updated: string): LineMessage {
   };
 }
 
-// 台股快報:因股票數量多,拆成 carousel 多頁(每頁 ≤6 檔,避免超過 LINE flex 10KB 上限)
-function stockCard(quotes: Quote[], updated: string): LineMessage {
-  const index = quotes.find((q) => q.cat === "index");
-  const large = quotes.filter((q) => q.cat === "large");
-  const etf = quotes.filter((q) => q.cat === "etf");
-
-  const bubbles: LineMessage[] = [];
-
-  // 第一頁:大盤指數 + 前段權值股
-  const firstLarge = large.slice(0, 6);
-  const restLarge = large.slice(6);
-  const page1: LineMessage[] = [marketHeader("Yahoo Finance ・ 即時")];
-  if (index) page1.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(index)] });
-  if (firstLarge.length) {
-    page1.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
-    page1.push(sectionLabel("權值股"));
-    page1.push(quoteRows(firstLarge));
-  }
-  bubbles.push(stockBubble(page1, updated));
-
-  // 第二頁:其餘權值股 + ETF
-  const page2: LineMessage[] = [marketHeader("熱門個股 ・ ETF")];
-  if (restLarge.length) {
-    page2.push(sectionLabel("權值股"));
-    page2.push(quoteRows(restLarge));
-  }
-  if (etf.length) {
-    if (restLarge.length) page2.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
-    page2.push(sectionLabel("ETF"));
-    page2.push(quoteRows(etf));
-  }
-  if (page2.length > 1) bubbles.push(stockBubble(page2, updated));
-
+// 個股總覽頁:整區可點清單(點任一檔 → 送出 postback 看走勢),不即時抓價
+function directoryBubble(label: string, items: StockDef[]): LineMessage {
+  const rows: LineMessage[] = [];
+  items.forEach((s, i) => {
+    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
+    rows.push(pickRow(s.name, s.code, `s=stk&sym=${s.sym}`, `${s.name} 走勢`));
+  });
   return {
-    type: "flex",
-    altText: "台股快報",
-    contents: { type: "carousel", contents: bubbles },
+    type: "bubble",
+    size: "mega",
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "20px",
+      spacing: "none",
+      contents: [
+        {
+          type: "box",
+          layout: "horizontal",
+          alignItems: "center",
+          contents: [
+            { type: "text", text: "STOCK LIST", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+            { type: "filler" },
+            { type: "text", text: label, size: "xs", weight: "bold", color: "#334155", align: "end", flex: 0 },
+          ],
+        },
+        { type: "separator", margin: "lg", color: "#F1F5F9" },
+        { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows },
+        { type: "text", text: "點任一檔看即時走勢 · 或直接打代號查任何股票", size: "xxs", color: "#CBD5E1", margin: "lg", wrap: true },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "12px",
+      paddingTop: "0px",
+      contents: [subtleLink("前往股票分析網站", STOCK_URL)],
+    },
   };
 }
 
@@ -267,10 +375,10 @@ function updatedNow(): string {
   });
 }
 
-// 挑股票看走勢的 chips(postback)+ 提示可自行輸入代號
+// 挑熱門股看走勢的 chips(postback);LINE quick reply 上限 13 顆
 function pickChips(): QuickItem[] {
-  // LINE quick reply 上限 13 顆;排除大盤指數,留給個股/ETF
-  return SYMBOLS.filter((s) => s.cat !== "index")
+  return CHIP_CODES.map((c) => ALL.find((s) => s.code === c))
+    .filter((s): s is StockDef => Boolean(s))
     .slice(0, 13)
     .map((s) => ({
       label: s.name,
@@ -282,7 +390,7 @@ function pickChips(): QuickItem[] {
 // 把使用者輸入解析成代號:認名稱、4~6 位代號(自動補 .TW)
 export function resolveStock(text: string): { sym: string; name: string; code: string } | undefined {
   const t = text.trim();
-  const byName = SYMBOLS.find((s) => t.includes(s.name) || t.includes(s.code));
+  const byName = [INDEX, ...ALL].find((s) => t.includes(s.name) || t.includes(s.code));
   if (byName) return byName;
   const m = t.match(/(?:^|\D)(\d{4,6})(?:\.(?:TW|TWO))?(?:\D|$)/i);
   if (m) {
@@ -356,7 +464,7 @@ function trendUnavailable(label: string): LineMessage {
 }
 
 export async function stockTrend(sym: string, name?: string, code?: string): Promise<LineMessage[]> {
-  const known = SYMBOLS.find((s) => s.sym === sym);
+  const known = ALL.find((s) => s.sym === sym);
   const dispName = name ?? known?.name ?? sym;
   const dispCode = code ?? known?.code ?? sym.replace(/\.(TW|TWO)$/i, "");
 
@@ -460,8 +568,38 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
 }
 
 export async function stockMenu(): Promise<LineMessage[]> {
-  const quotes = await Promise.all(SYMBOLS.map((s) => fetchQuote(s.sym, s.name, s.code, s.cat)));
-  const card = stockCard(quotes, updatedNow());
-  card.quickReply = quickReply(pickChips());
+  const updated = updatedNow();
+
+  // 第一頁只即時抓「大盤 + 頭條熱門股」,避免一次打 50+ 檔 Yahoo 造成緩慢或被限流
+  const liveTargets = [INDEX, ...HEADLINES];
+  const quotes = await Promise.all(liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)));
+  const idx = quotes[0];
+  const headlineQuotes = quotes.slice(1);
+
+  const bubbles: LineMessage[] = [];
+
+  // 第一頁:即時快報(大盤特寫 + 熱門股)
+  const page1: LineMessage[] = [marketHeader("Yahoo Finance ・ 即時")];
+  page1.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
+  page1.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+  page1.push(sectionLabel("熱門股"));
+  page1.push(quoteRows(headlineQuotes));
+  bubbles.push(stockBubble(page1, updated));
+
+  // 後續頁:台灣 50 + ETF 個股總覽(依產業分類,整區可點)
+  for (const sec of SECTORS) {
+    const parts = chunk(sec.items, 13);
+    parts.forEach((items, i) => {
+      const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
+      bubbles.push(directoryBubble(label, items));
+    });
+  }
+
+  const card: LineMessage = {
+    type: "flex",
+    altText: "台股快報 · 台灣50",
+    contents: { type: "carousel", contents: bubbles },
+    quickReply: quickReply(pickChips()),
+  };
   return [card];
 }
