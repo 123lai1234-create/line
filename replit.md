@@ -52,6 +52,7 @@
 ## User preferences
 
 - Admin panel password is user-chosen and stored as the `ADMIN_PASSWORD` secret.
+- Auto-publish: after every change, proactively trigger deployment (call `suggest_deploy`) without waiting to be asked — the user still confirms the final publish dialog.
 
 ## Gotchas
 
