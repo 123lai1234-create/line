@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "ccSGxi_Me66ERD5i04dLE"
+uri = "file://scripts/assets/richmenu.png"
+type = "image"
+title = "LINE 圖文選單"

@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
-import { verifyLineSignature, replyMessage } from "../lib/line";
+import { verifyLineSignature, replyMessages } from "../lib/line";
+import { routeMessage, mainMenu } from "../lib/services/router";
 import { ensureProfile } from "./profile";
 
 const router: IRouter = Router();
@@ -7,24 +8,30 @@ const router: IRouter = Router();
 interface LineWebhookEvent {
   type: string;
   replyToken?: string;
-  message?: { type: string };
+  message?: { type: string; text?: string };
 }
 
 async function handleWebhookEvents(req: Request): Promise<void> {
   const events = Array.isArray((req.body as { events?: unknown[] })?.events)
-    ? ((req.body as { events: LineWebhookEvent[] }).events)
+    ? (req.body as { events: LineWebhookEvent[] }).events
     : [];
   if (events.length === 0) return;
 
   const profile = await ensureProfile();
-  const introText = `${profile.introMessage}\n\n${profile.websiteUrl}`;
+  const ctx = {
+    botName: profile.botName,
+    introMessage: profile.introMessage,
+    websiteUrl: profile.websiteUrl,
+  };
 
   for (const event of events) {
     if (!event.replyToken) continue;
+
     if (event.type === "follow") {
-      await replyMessage(event.replyToken, introText);
+      await replyMessages(event.replyToken, mainMenu(profile.botName));
     } else if (event.type === "message" && event.message?.type === "text") {
-      await replyMessage(event.replyToken, introText);
+      const messages = await routeMessage(event.message.text ?? "", ctx);
+      await replyMessages(event.replyToken, messages);
     }
   }
 }

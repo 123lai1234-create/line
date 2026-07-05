@@ -1,2 +1,3 @@
 - [Stateless admin auth](admin-panel-single-user-auth.md) — single-admin panels can use an HMAC-signed httpOnly cookie instead of a session store/user table.
 - [Testing auth-gated flows with secret passwords](testing-with-secret-credentials.md) — Playwright test subagents can't access env secrets; verify secret-gated login via curl instead.
+- [SVG/CJK rasterization](svg-cjk-rasterization.md) — resvg-js renders Chinese as tofu (only reads format-4 cmap); use @napi-rs/canvas for CJK image generation.

@@ -24,9 +24,11 @@
 
 ## Where things live
 
-- `artifacts/api-server/src/lib/line.ts` — LINE Messaging API client (signature verification, reply, broadcast, insight/quota reads)
+- `artifacts/api-server/src/lib/line.ts` — LINE Messaging API client (signature verification, reply, `replyMessages` multi-message reply, broadcast, insight/quota reads, rich menu create/upload/set-default helpers)
+- `artifacts/api-server/src/lib/services/` — real-time chatbot services: `weather.ts` (Open-Meteo marine+forecast, dive-suitability for 6 dive spots), `stock.ts` (Yahoo Finance live quotes), `music.ts` (iTunes Search carousel), `projects.ts` (portfolio project cards), `flex.ts` (LINE message/flex builders), `router.ts` (keyword + rich-menu routing, main menu, about)
+- `scripts/src/setup-line-richmenu.ts` — renders the 2x2 rich menu PNG (`@napi-rs/canvas`, jf-openhuninn font) and publishes it to LINE; run `pnpm --filter @workspace/scripts run setup-line-richmenu` (preview) or prefix `APPLY=1` to publish
 - `artifacts/api-server/src/lib/auth.ts` — stateless signed-cookie session auth for the admin panel
-- `artifacts/api-server/src/routes/line-webhook.ts` — LINE webhook handler (`POST /api/line/webhook`), replies with the intro message to any `message` or `follow` event
+- `artifacts/api-server/src/routes/line-webhook.ts` — LINE webhook handler (`POST /api/line/webhook`); routes text `message` events through `routeMessage` (keyword/rich-menu services) and sends the main menu on `follow`
 - `artifacts/api-server/src/routes/{auth,profile,broadcasts,stats}.ts` — admin panel API routes
 - `lib/db/src/schema/profile.ts` — singleton bot profile row (name, intro message, website URL)
 - `lib/db/src/schema/broadcasts.ts` — broadcast history log

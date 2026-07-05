@@ -31,13 +31,17 @@ export function verifyLineSignature(rawBody: Buffer, signature: string | undefin
 }
 
 export async function replyMessage(replyToken: string, text: string): Promise<void> {
+  await replyMessages(replyToken, [{ type: "text", text }]);
+}
+
+export async function replyMessages(replyToken: string, messages: unknown[]): Promise<void> {
   const res = await fetch(`${LINE_API_BASE}/message/reply`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${getChannelAccessToken()}`,
     },
-    body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ replyToken, messages: messages.slice(0, 5) }),
   });
 
   if (!res.ok) {
@@ -91,4 +95,66 @@ export async function getQuotaConsumption(): Promise<{ totalUsage: number } | nu
 
   if (!res.ok) return null;
   return (await res.json()) as { totalUsage: number };
+}
+
+const LINE_DATA_BASE = "https://api-data.line.me/v2/bot";
+
+export async function listRichMenus(): Promise<{ richMenuId: string }[]> {
+  const res = await fetch(`${LINE_API_BASE}/richmenu/list`, {
+    headers: { Authorization: `Bearer ${getChannelAccessToken()}` },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { richmenus?: { richMenuId: string }[] };
+  return data.richmenus ?? [];
+}
+
+export async function deleteRichMenu(richMenuId: string): Promise<void> {
+  await fetch(`${LINE_API_BASE}/richmenu/${richMenuId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${getChannelAccessToken()}` },
+  });
+}
+
+export async function createRichMenu(richMenu: unknown): Promise<string> {
+  const res = await fetch(`${LINE_API_BASE}/richmenu`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getChannelAccessToken()}`,
+    },
+    body: JSON.stringify(richMenu),
+  });
+  if (!res.ok) {
+    throw new Error(`createRichMenu failed ${res.status}: ${await res.text()}`);
+  }
+  const data = (await res.json()) as { richMenuId: string };
+  return data.richMenuId;
+}
+
+export async function uploadRichMenuImage(
+  richMenuId: string,
+  image: Buffer,
+  contentType: "image/png" | "image/jpeg",
+): Promise<void> {
+  const res = await fetch(`${LINE_DATA_BASE}/richmenu/${richMenuId}/content`, {
+    method: "POST",
+    headers: {
+      "Content-Type": contentType,
+      Authorization: `Bearer ${getChannelAccessToken()}`,
+    },
+    body: new Uint8Array(image),
+  });
+  if (!res.ok) {
+    throw new Error(`uploadRichMenuImage failed ${res.status}: ${await res.text()}`);
+  }
+}
+
+export async function setDefaultRichMenu(richMenuId: string): Promise<void> {
+  const res = await fetch(`${LINE_API_BASE}/user/all/richmenu/${richMenuId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getChannelAccessToken()}` },
+  });
+  if (!res.ok) {
+    throw new Error(`setDefaultRichMenu failed ${res.status}: ${await res.text()}`);
+  }
 }
