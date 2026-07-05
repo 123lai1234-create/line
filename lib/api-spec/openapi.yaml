@@ -10,6 +10,14 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Admin panel authentication
+  - name: profile
+    description: LINE bot introduction content
+  - name: broadcasts
+    description: Push message broadcasts
+  - name: stats
+    description: LINE bot statistics
 paths:
   /healthz:
     get:
@@ -24,6 +32,162 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Log in to the admin panel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+        "401":
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Log out of the admin panel
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+  /auth/me:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Check current authentication status
+      responses:
+        "200":
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get the bot's introduction content
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update the bot's introduction content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /broadcasts:
+    get:
+      operationId: listBroadcasts
+      tags: [broadcasts]
+      summary: List past broadcast messages
+      responses:
+        "200":
+          description: List of broadcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createBroadcast
+      tags: [broadcasts]
+      summary: Send a push message broadcast to all LINE friends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastInput"
+      responses:
+        "201":
+          description: Broadcast sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: LINE API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Get LINE bot usage statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +197,83 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    LoginInput:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+    AuthStatus:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+    Profile:
+      type: object
+      required: [introMessage, websiteUrl, botName, updatedAt]
+      properties:
+        introMessage:
+          type: string
+        websiteUrl:
+          type: string
+        botName:
+          type: string
+        updatedAt:
+          type: string
+    ProfileUpdate:
+      type: object
+      required: [introMessage, websiteUrl, botName]
+      properties:
+        introMessage:
+          type: string
+          minLength: 1
+        websiteUrl:
+          type: string
+          minLength: 1
+        botName:
+          type: string
+          minLength: 1
+    Broadcast:
+      type: object
+      required: [id, message, status, sentAt]
+      properties:
+        id:
+          type: integer
+        message:
+          type: string
+        status:
+          type: string
+          enum: [sent, failed]
+        errorMessage:
+          type: ["string", "null"]
+        sentAt:
+          type: string
+    BroadcastInput:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    Stats:
+      type: object
+      required: [followerCount, followerCountDate, targetLimit, totalUsageThisMonth, broadcastCount]
+      properties:
+        followerCount:
+          type: ["integer", "null"]
+        followerCountDate:
+          type: ["string", "null"]
+        targetLimit:
+          type: ["integer", "null"]
+        totalUsageThisMonth:
+          type: ["integer", "null"]
+        broadcastCount:
+          type: integer

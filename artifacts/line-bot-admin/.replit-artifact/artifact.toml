@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "作品集機器人管理面板"
+version = "1.0.0"
+id = "artifacts/line-bot-admin"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22665
+
+[services.development]
+run = "pnpm --filter @workspace/line-bot-admin run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/line-bot-admin", "run", "build" ]
+publicDir = "artifacts/line-bot-admin/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22665"
+BASE_PATH = "/"
