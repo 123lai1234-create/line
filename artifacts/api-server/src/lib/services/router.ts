@@ -1,4 +1,4 @@
-import { textMessage, quickReply, subtleLink, type LineMessage, type QuickItem } from "./flex";
+import { textMessage, quickReply, type LineMessage, type QuickItem } from "./flex";
 import { weatherEntry, weatherFor, locByKeyword } from "./weather";
 import { stockMenu, stockTrend, resolveStock } from "./stock";
 import { musicMenu } from "./music";
@@ -23,58 +23,94 @@ interface Service {
   bg: string;
 }
 
-// 主選單以「分類卡」呈現:每個服務有圖示、標題、一句說明
+// 主選單以「Bento 色塊磚牆」呈現:每個服務是一塊代表色磚,依分類分組
 const SERVICES: Service[] = [
-  { emoji: "🤿", title: "潛水海況", desc: "6 大潛點 × 未來 5 天浪高風速與下水建議", action: "潛水海況", accent: "#0EA5E9", bg: "#E0F2FE" },
-  { emoji: "📈", title: "股票走勢", desc: "台股即時報價,挑一檔看近一個月走勢圖", action: "股票走勢", accent: "#DC2626", bg: "#FEE2E2" },
-  { emoji: "🎧", title: "音樂欣賞", desc: "創作 MV 精選輪播,點開直接看", action: "音樂欣賞", accent: "#7C3AED", bg: "#EDE9FE" },
-  { emoji: "🧬", title: "蛋白質設計", desc: "AI 設計流程導覽 + 貼序列即時分析", action: "蛋白質設計", accent: "#059669", bg: "#D1FAE5" },
-  { emoji: "🗂", title: "專案介紹", desc: "生醫 AI、量化研究等作品一覽", action: "專案介紹", accent: "#D97706", bg: "#FEF3C7" },
+  { emoji: "🤿", title: "潛水海況", desc: "6 大潛點 · 未來 5 天浪高風速", action: "潛水海況", accent: "#0EA5E9", bg: "#E0F2FE" },
+  { emoji: "📈", title: "股票走勢", desc: "台股即時報價 · 一個月走勢圖", action: "股票走勢", accent: "#DC2626", bg: "#FEE2E2" },
+  { emoji: "🎧", title: "音樂欣賞", desc: "創作 MV 精選輪播", action: "音樂欣賞", accent: "#7C3AED", bg: "#EDE9FE" },
+  { emoji: "🧬", title: "蛋白質設計", desc: "AI 流程導覽 + 序列分析", action: "蛋白質設計", accent: "#059669", bg: "#D1FAE5" },
+  { emoji: "🗂", title: "專案介紹", desc: "生醫 AI、量化研究作品", action: "專案介紹", accent: "#D97706", bg: "#FEF3C7" },
 ];
 
-function serviceRow(s: Service): LineMessage {
+const S = Object.fromEntries(SERVICES.map((s) => [s.title, s])) as Record<string, Service>;
+
+// 單塊 Bento 磚:代表色底、白色半透明圖示格、彩色標題 + 說明。feature=橫向大磚。
+function tile(s: Service, feature = false): LineMessage {
+  const iconChip: LineMessage = {
+    type: "box",
+    layout: "vertical",
+    width: feature ? "48px" : "40px",
+    height: feature ? "48px" : "40px",
+    cornerRadius: "12px",
+    backgroundColor: "#FFFFFF80",
+    justifyContent: "center",
+    alignItems: "center",
+    flex: 0,
+    contents: [{ type: "text", text: s.emoji, size: feature ? "xl" : "lg", align: "center" }],
+  };
+  const textBox: LineMessage = {
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    contents: [
+      { type: "text", text: s.title, size: "sm", weight: "bold", color: s.accent },
+      { type: "text", text: s.desc, size: "xxs", color: "#64748B", margin: "xs", wrap: true },
+    ],
+  };
+  return {
+    type: "box",
+    layout: feature ? "horizontal" : "vertical",
+    backgroundColor: s.bg,
+    cornerRadius: "16px",
+    paddingAll: "12px",
+    spacing: feature ? "md" : "none",
+    alignItems: feature ? "center" : undefined,
+    flex: 1,
+    action: { type: "message", label: s.title, text: s.action },
+    contents: feature ? [iconChip, textBox] : [iconChip, { ...textBox, margin: "md" }],
+  } as LineMessage;
+}
+
+function tileRow(a: Service, b: Service, margin = "sm"): LineMessage {
+  return { type: "box", layout: "horizontal", spacing: "md", margin, contents: [tile(a), tile(b)] };
+}
+
+function sectionLabel(text: string): LineMessage {
   return {
     type: "box",
     layout: "horizontal",
     alignItems: "center",
-    spacing: "md",
-    paddingTop: "14px",
-    paddingBottom: "14px",
-    action: { type: "message", label: s.title, text: s.action },
+    spacing: "sm",
+    margin: "lg",
     contents: [
       {
         type: "box",
         layout: "vertical",
-        width: "44px",
-        height: "44px",
-        cornerRadius: "12px",
-        backgroundColor: s.bg,
-        justifyContent: "center",
-        alignItems: "center",
+        width: "6px",
+        height: "6px",
+        cornerRadius: "3px",
+        backgroundColor: "#CBD5E1",
         flex: 0,
-        contents: [{ type: "text", text: s.emoji, size: "lg", align: "center" }],
+        contents: [{ type: "filler" }],
       },
-      {
-        type: "box",
-        layout: "vertical",
-        flex: 1,
-        contents: [
-          { type: "text", text: s.title, size: "md", weight: "bold", color: "#0F172A" },
-          { type: "text", text: s.desc, size: "xxs", color: "#94A3B8", margin: "xs", wrap: true },
-        ],
-      },
-      { type: "text", text: "›", size: "xl", color: "#CBD5E1", flex: 0, gravity: "center" },
+      { type: "text", text, size: "xs", weight: "bold", color: "#94A3B8" },
     ],
   };
 }
 
-export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
-  const rows: LineMessage[] = [];
-  SERVICES.forEach((s, i) => {
-    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
-    rows.push(serviceRow(s));
-  });
+function footerCell(label: string, action: Record<string, unknown>): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    paddingTop: "13px",
+    paddingBottom: "13px",
+    action,
+    contents: [{ type: "text", text: label, size: "xs", weight: "bold", color: "#475569", align: "center" }],
+  };
+}
 
+export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
   const bubbleContents: Record<string, unknown> = {
     type: "bubble",
     size: "mega",
@@ -96,26 +132,34 @@ export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
         },
         {
           type: "text",
-          text: "選一個主題,或直接輸入指令 — 也可以貼股票代號、胺基酸序列給我。",
+          text: "選一個分類,或直接輸入指令。",
           size: "sm",
           color: "#64748B",
           margin: "sm",
           wrap: true,
         },
-        { type: "separator", margin: "lg", color: "#F1F5F9" },
-        { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows },
+        sectionLabel("即時工具"),
+        tileRow(S["潛水海況"], S["股票走勢"]),
+        sectionLabel("創作作品"),
+        tile(S["音樂欣賞"], true),
+        tileRow(S["蛋白質設計"], S["專案介紹"]),
       ],
     },
   };
+
+  const footerCells: LineMessage[] = [];
   if (websiteUrl) {
-    bubbleContents.footer = {
-      type: "box",
-      layout: "vertical",
-      paddingAll: "12px",
-      paddingTop: "0px",
-      contents: [subtleLink("前往作品集網站", websiteUrl)],
-    };
+    footerCells.push(footerCell("前往網站", { type: "uri", label: "前往網站", uri: websiteUrl }));
+    footerCells.push({ type: "separator", color: "#E2E8F0" });
   }
+  footerCells.push(footerCell("關於我", { type: "message", label: "關於我", text: "關於我" }));
+  bubbleContents.footer = {
+    type: "box",
+    layout: "horizontal",
+    backgroundColor: "#F8FAFC",
+    contents: footerCells,
+  };
+
   const bubble: LineMessage = {
     type: "flex",
     altText: `${botName}・服務選單`,

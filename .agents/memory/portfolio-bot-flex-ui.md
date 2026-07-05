@@ -25,7 +25,8 @@ The user reviewed two canvas mockups ("Refined" light/white bank style vs "Premi
 - `gaugeBar(level)` — still exported but NO LONGER used (Refined replaced the 3-segment bar with a single `dot`). Kept for reference; safe to remove if truly unused later.
 
 ## Per-card notes
-- `router.ts` mainMenu: no hero image, no icon chips, no subtitles — just eyebrow + greeting + hairline-separated tappable title rows (`title` + `›`) + subtle footer link.
+- `router.ts` mainMenu: **Bento 色塊 grid** (user re-approved this over the earlier plain hairline list, and over Hero/Segmented/pill-tab variants). Eyebrow `MAIN MENU` + greeting + tagline, then category labels (即時工具/創作作品) each with 2-col tinted color tiles; 音樂欣賞 is a full-width `feature` tile; footer is a 2-cell row (前往網站 uri + 關於我 message). Tiles use each service's own `accent`/`bg`; icon chip bg is translucent white `#FFFFFF80`. Design variants were explored as mockups in `artifacts/mockup-sandbox/.../line-cards/` before graduating.
+- **LINE Flex `backgroundColor` accepts 8-digit `#RRGGBBAA` alpha hex** (e.g. `#FFFFFF80` for 50% white) — used for the tile icon chips. Not just 6-digit.
 - `stock.ts`: eyebrow + `Yahoo Finance ・ 即時`; index hero = label + big dark number + right-aligned colored change block; per-stock rows with dark price + colored change block, hairline-separated; `更新 …` caption; subtleLink footer.
 - `weather.ts`: eyebrow + `今日海況` row with a `verdictBadge` pill (適合下水/建議斟酌/不建議下水); metric rows = label + dark value + colored `dot`; slate-50 reason box (verdict-based) when normal, red banner when offshore-west; subtleLink footer.
 
