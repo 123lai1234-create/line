@@ -1,0 +1,2 @@
+- [Stateless admin auth](admin-panel-single-user-auth.md) — single-admin panels can use an HMAC-signed httpOnly cookie instead of a session store/user table.
+- [Testing auth-gated flows with secret passwords](testing-with-secret-credentials.md) — Playwright test subagents can't access env secrets; verify secret-gated login via curl instead.
