@@ -1,4 +1,4 @@
-import { textMessage, quickReply, type LineMessage, type QuickItem } from "./flex";
+import { textMessage, quickReply, linkButton, type LineMessage, type QuickItem } from "./flex";
 import { weatherMenu } from "./weather";
 import { stockMenu } from "./stock";
 import { musicMenu } from "./music";
@@ -17,13 +17,14 @@ interface Service {
   title: string;
   subtitle: string;
   action: string;
+  accent: string;
 }
 
 const SERVICES: Service[] = [
-  { emoji: "🤿", title: "潛水天氣", subtitle: "龍洞即時浪況與 GO/CAUTION 判斷", action: "潛水天氣" },
-  { emoji: "📈", title: "股票快報", subtitle: "台股大盤與代表個股即時報價", action: "股票快報" },
-  { emoji: "🎧", title: "音樂欣賞", subtitle: "我發表音樂與創作的平台", action: "音樂欣賞" },
-  { emoji: "🧬", title: "專案介紹", subtitle: "我的作品集與專案", action: "專案介紹" },
+  { emoji: "🤿", title: "潛水天氣", subtitle: "龍洞即時浪況與 GO/CAUTION 判斷", action: "潛水天氣", accent: "#0EA5E9" },
+  { emoji: "📈", title: "股票快報", subtitle: "台股大盤與代表個股即時報價", action: "股票快報", accent: "#1E293B" },
+  { emoji: "🎧", title: "音樂欣賞", subtitle: "我發表音樂與創作的平台", action: "音樂欣賞", accent: "#DB2777" },
+  { emoji: "🧬", title: "專案介紹", subtitle: "我的作品集與專案", action: "專案介紹", accent: "#0F172A" },
 ];
 
 function serviceRow(s: Service): LineMessage {
@@ -31,17 +32,30 @@ function serviceRow(s: Service): LineMessage {
     type: "box",
     layout: "horizontal",
     spacing: "md",
-    paddingAll: "12px",
-    cornerRadius: "12px",
+    paddingAll: "10px",
+    cornerRadius: "14px",
     backgroundColor: "#F8FAFC",
+    alignItems: "center",
     action: { type: "message", label: s.title, text: s.action },
     contents: [
-      { type: "text", text: s.emoji, size: "xl", flex: 0, gravity: "center" },
+      {
+        type: "box",
+        layout: "vertical",
+        width: "46px",
+        height: "46px",
+        cornerRadius: "12px",
+        backgroundColor: s.accent,
+        justifyContent: "center",
+        alignItems: "center",
+        flex: 0,
+        contents: [{ type: "text", text: s.emoji, size: "xl", align: "center", gravity: "center" }],
+      },
       {
         type: "box",
         layout: "vertical",
         flex: 1,
         spacing: "xs",
+        justifyContent: "center",
         contents: [
           { type: "text", text: s.title, weight: "bold", size: "sm", color: "#0F172A" },
           { type: "text", text: s.subtitle, size: "xxs", color: "#64748B", wrap: true },
@@ -52,32 +66,57 @@ function serviceRow(s: Service): LineMessage {
   };
 }
 
-export function mainMenu(botName: string): LineMessage[] {
+const MENU_HERO = "https://donttalk.vercel.app/og-default.png";
+
+export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
+  const bubbleContents: Record<string, unknown> = {
+    type: "bubble",
+    hero: {
+      type: "image",
+      url: MENU_HERO,
+      size: "full",
+      aspectRatio: "40:21",
+      aspectMode: "cover",
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: `嗨,我是 ${botName} 👋`, weight: "bold", size: "lg", color: "#0F172A", wrap: true },
+        {
+          type: "text",
+          text: "點下面服務,或直接打關鍵字(例如「股票」「風浪」)",
+          size: "xs",
+          color: "#64748B",
+          wrap: true,
+        },
+        { type: "separator", margin: "md", color: "#E2E8F0" },
+        {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          margin: "md",
+          contents: SERVICES.map(serviceRow),
+        },
+      ],
+    },
+  };
+  if (websiteUrl) {
+    bubbleContents.footer = {
+      type: "box",
+      layout: "vertical",
+      contents: [linkButton("看我的作品集網站", websiteUrl, "#4F46E5")],
+    };
+  }
   const bubble: LineMessage = {
     type: "flex",
     altText: `嗨,我是${botName},這是服務選單`,
-    contents: {
-      type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#4F46E5",
-        paddingAll: "20px",
-        contents: [
-          { type: "text", text: `嗨,我是${botName} 👋`, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true },
-          { type: "text", text: "點下面選單,或直接打關鍵字都可以", color: "#E0E7FF", size: "xs", margin: "sm", wrap: true },
-        ],
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        paddingAll: "16px",
-        contents: SERVICES.map(serviceRow),
-      },
-    },
+    contents: bubbleContents,
+    quickReply: textMessage("", MAIN_MENU_ITEMS).quickReply as Record<string, unknown>,
   };
-  return [{ ...bubble, quickReply: textMessage("", MAIN_MENU_ITEMS).quickReply as Record<string, unknown> }];
+  return [bubble];
 }
 
 export function aboutMessage(introMessage: string, websiteUrl: string): LineMessage[] {
@@ -109,7 +148,7 @@ function withMenu(messages: LineMessage[]): LineMessage[] {
 export async function routeMessage(raw: string, ctx: RouteContext): Promise<LineMessage[]> {
   const text = raw.trim();
 
-  if (isMenuTrigger(text)) return mainMenu(ctx.botName);
+  if (isMenuTrigger(text)) return mainMenu(ctx.botName, ctx.websiteUrl);
   if (/關於我|about|作者|你是誰|自我介紹/i.test(text)) {
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
   }

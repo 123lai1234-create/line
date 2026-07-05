@@ -4,3 +4,4 @@
 - [Broadcast testing safety](broadcast-testing.md) — POST /api/broadcasts sends to real LINE friends instantly; only test rejections or future-scheduled rows, then delete them.
 - [LINE bot hosting & webhook wiring](line-bot-hosting.md) — published bot silent? repoint webhook to prod URL + use vm (not autoscale) for webhook+scheduler.
 - [Portfolio bot live-data sourcing](portfolio-bot-live-data.md) — 股票/風浪 replies fetch upstream public APIs (Open-Meteo, Yahoo) directly, not the owner's site (its backend is often down); TW 紅漲綠跌; 龍洞 offshore=西風=NO-GO.
+- [LINE bot flex UI](portfolio-bot-flex-ui.md) — rich-card helpers (`pill`, `gaugeBar`) live in flex.ts; hero image only works on two-t `donttalk.vercel.app/og-default.png` (one-t = 404); verify flex via esbuild+node (no tsx).

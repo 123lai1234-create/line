@@ -63,3 +63,39 @@ export function linkButton(label: string, uri: string, color = "#10B981"): LineM
     action: { type: "uri", label: label.slice(0, 20), uri },
   };
 }
+
+// 彩色圓角標籤(pill),用於漲跌幅、狀態徽章等
+export function pill(text: string, bg: string, color: string): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    backgroundColor: bg,
+    cornerRadius: "6px",
+    paddingAll: "5px",
+    paddingStart: "9px",
+    paddingEnd: "9px",
+    flex: 0,
+    contents: [{ type: "text", text, size: "xs", weight: "bold", color, align: "center" }],
+  };
+}
+
+const GAUGE_COLORS = ["#10B981", "#F59E0B", "#EF4444"];
+// 三段式指標條:0=GO(綠) 1=CAUTION(黃) 2=NO-GO(紅),點亮目前所在段
+export function gaugeBar(level: number): LineMessage {
+  const active = Math.max(0, Math.min(2, level | 0));
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "xs",
+    margin: "sm",
+    contents: [0, 1, 2].map((i) => ({
+      type: "box",
+      layout: "vertical",
+      height: "6px",
+      flex: 1,
+      cornerRadius: "3px",
+      backgroundColor: i === active ? GAUGE_COLORS[i] : "#E2E8F0",
+      contents: [{ type: "filler" }],
+    })),
+  };
+}

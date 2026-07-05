@@ -1,4 +1,4 @@
-import { fetchWithTimeout, kvRow, linkButton, type LineMessage } from "./flex";
+import { fetchWithTimeout, gaugeBar, linkButton, type LineMessage } from "./flex";
 
 const DIVING_URL = "https://donttalk.vercel.app/diving";
 // 龍洞（東北角）
@@ -93,6 +93,36 @@ function verdict(sev: Severity): { label: string; color: string } {
   return { label: "🔴 NO-GO・建議改期", color: "#EF4444" };
 }
 
+// 單一指標:標籤 + 數值(+燈號)+ 三段式指標條
+function metricRow(label: string, value: string, sev: Severity): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    margin: "lg",
+    contents: [
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: label, size: "sm", color: "#475569", flex: 1, gravity: "center" },
+          {
+            type: "text",
+            text: `${value} ${DOT[sev]}`,
+            size: "sm",
+            weight: "bold",
+            color: "#0F172A",
+            align: "end",
+            flex: 1,
+            gravity: "center",
+          },
+        ],
+      },
+      gaugeBar(sev),
+    ],
+  };
+}
+
 function unavailableCard(): LineMessage {
   return {
     type: "flex",
@@ -131,29 +161,27 @@ function conditionsCard(c: Conditions): LineMessage {
   if (c.waveHeight !== null) {
     const s = sevWave(c.waveHeight);
     severities.push(s);
-    rows.push(kvRow("🌊 浪高", `${c.waveHeight.toFixed(1)} m ${DOT[s]}`));
+    rows.push(metricRow("🌊 浪高", `${c.waveHeight.toFixed(1)} m`, s));
   }
   if (c.wavePeriod !== null) {
     const s = sevPeriod(c.wavePeriod);
     severities.push(s);
-    rows.push(kvRow("📏 週期", `${c.wavePeriod.toFixed(1)} s ${DOT[s]}`));
+    rows.push(metricRow("📏 週期", `${c.wavePeriod.toFixed(1)} s`, s));
   }
   if (c.windSpeed !== null) {
     const s = sevWind(c.windSpeed);
     severities.push(s);
-    const dir = c.windDir !== null ? `${compass(c.windDir)}風` : "";
-    rows.push(kvRow("🌬️ 風速", `${c.windSpeed.toFixed(1)} m/s ${dir} ${DOT[s]}`.trim()));
+    const dir = c.windDir !== null ? ` ${compass(c.windDir)}風` : "";
+    rows.push(metricRow("🌬️ 風速", `${c.windSpeed.toFixed(1)} m/s${dir}`, s));
   }
   if (c.seaTemp !== null) {
     const s = sevTemp(c.seaTemp);
     severities.push(s);
-    rows.push(kvRow("🌡️ 水溫", `${c.seaTemp.toFixed(1)} °C ${DOT[s]}`));
+    rows.push(metricRow("🌡️ 水溫", `${c.seaTemp.toFixed(1)} °C`, s));
   }
 
   const offshore = c.windDir !== null && isOffshoreWest(c.windDir);
-  let overall: Severity = severities.length
-    ? (Math.max(...severities) as Severity)
-    : 1;
+  let overall: Severity = severities.length ? (Math.max(...severities) as Severity) : 1;
   // 龍洞離岸風(西風)是東北角溺水主因之一 → 直接列為 NO-GO
   if (offshore) overall = 2;
 
@@ -161,12 +189,21 @@ function conditionsCard(c: Conditions): LineMessage {
   const bodyContents: LineMessage[] = [...rows];
   if (offshore) {
     bodyContents.push({
-      type: "text",
-      text: "🔴 目前偏西風(離岸風),會把潛水員推向外海,是東北角溺水主因之一,強烈建議改期。",
-      wrap: true,
-      size: "xs",
-      color: "#B91C1C",
-      margin: "md",
+      type: "box",
+      layout: "vertical",
+      backgroundColor: "#FEF2F2",
+      cornerRadius: "10px",
+      paddingAll: "12px",
+      margin: "lg",
+      contents: [
+        {
+          type: "text",
+          text: "🔴 目前偏西風(離岸風),會把潛水員推向外海,是東北角溺水主因之一,強烈建議改期。",
+          wrap: true,
+          size: "xs",
+          color: "#B91C1C",
+        },
+      ],
     });
   }
   const updated = c.time ? c.time.replace("T", " ") : "";
@@ -181,15 +218,16 @@ function conditionsCard(c: Conditions): LineMessage {
         layout: "vertical",
         backgroundColor: v.color,
         paddingAll: "20px",
+        spacing: "xs",
         contents: [
-          { type: "text", text: "🤿 龍洞(東北角)浪況", color: "#FFFFFF", weight: "bold", size: "lg" },
-          { type: "text", text: v.label, color: "#FFFFFF", weight: "bold", size: "md", margin: "sm" },
+          { type: "text", text: "🤿 龍洞・東北角浪況", color: "#FFFFFF", size: "sm", weight: "bold" },
+          { type: "text", text: v.label, color: "#FFFFFF", weight: "bold", size: "xl" },
         ],
       },
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
+        spacing: "none",
         paddingAll: "16px",
         contents: bodyContents,
       },

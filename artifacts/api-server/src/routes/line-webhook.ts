@@ -28,7 +28,7 @@ async function handleWebhookEvents(req: Request): Promise<void> {
     if (!event.replyToken) continue;
 
     if (event.type === "follow") {
-      await replyMessages(event.replyToken, mainMenu(profile.botName));
+      await replyMessages(event.replyToken, mainMenu(profile.botName, profile.websiteUrl));
     } else if (event.type === "message" && event.message?.type === "text") {
       const messages = await routeMessage(event.message.text ?? "", ctx);
       await replyMessages(event.replyToken, messages);
