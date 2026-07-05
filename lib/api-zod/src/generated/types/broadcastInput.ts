@@ -5,11 +5,35 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BroadcastInputKind } from './broadcastInputKind';
 
 export interface BroadcastInput {
+  kind: BroadcastInputKind;
   /**
-     * @minLength 1
      * @maxLength 2000
+     * @nullable
      */
-  message: string;
+  message?: string | null;
+  /**
+     * @maxLength 100
+     * @nullable
+     */
+  title?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  imageUrl?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  linkUrl?: string | null;
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  linkLabel?: string | null;
+  /** @nullable */
+  scheduledAt?: string | null;
 }

@@ -50,20 +50,24 @@ export async function replyMessages(replyToken: string, messages: unknown[]): Pr
   }
 }
 
-export async function broadcastMessage(text: string): Promise<void> {
+export async function broadcastMessages(messages: unknown[]): Promise<void> {
   const res = await fetch(`${LINE_API_BASE}/message/broadcast`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${getChannelAccessToken()}`,
     },
-    body: JSON.stringify({ messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ messages: messages.slice(0, 5) }),
   });
 
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`LINE broadcast failed with status ${res.status}: ${body}`);
   }
+}
+
+export async function broadcastMessage(text: string): Promise<void> {
+  await broadcastMessages([{ type: "text", text }]);
 }
 
 export async function getFollowerInsight(dateStr: string): Promise<{ followers: number } | null> {

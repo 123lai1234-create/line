@@ -4,9 +4,15 @@ import { z } from "zod/v4";
 
 export const broadcastsTable = pgTable("broadcasts", {
   id: serial("id").primaryKey(),
-  message: text("message").notNull(),
-  status: text("status", { enum: ["sent", "failed"] }).notNull(),
+  kind: text("kind", { enum: ["text", "image", "flex"] }).notNull().default("text"),
+  message: text("message"),
+  title: text("title"),
+  imageUrl: text("image_url"),
+  linkUrl: text("link_url"),
+  linkLabel: text("link_label"),
+  status: text("status", { enum: ["sent", "failed", "scheduled"] }).notNull(),
   errorMessage: text("error_message"),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

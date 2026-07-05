@@ -20,7 +20,7 @@ type IconFn = (ctx: SKRSContext2D, cx: number, cy: number) => void;
 interface Panel {
   x: number;
   y: number;
-  bg: string;
+  bg: [string, string];
   title: string;
   subtitle: string;
   action: string;
@@ -109,10 +109,10 @@ const projectIcon: IconFn = (ctx, cx, cy) => {
 };
 
 const PANELS: Panel[] = [
-  { x: 0, y: 0, bg: "#0EA5E9", title: "潛水天氣", subtitle: "各潛點即時海況", action: "潛水天氣", icon: waveIcon },
-  { x: HALF_W, y: 0, bg: "#334155", title: "股票快報", subtitle: "即時股價與漲跌", action: "股票快報", icon: chartIcon },
-  { x: 0, y: HALF_H, bg: "#DB2777", title: "音樂欣賞", subtitle: "我的音樂平台", action: "音樂欣賞", icon: musicIcon },
-  { x: HALF_W, y: HALF_H, bg: "#059669", title: "專案介紹", subtitle: "我的作品集", action: "專案介紹", icon: projectIcon },
+  { x: 0, y: 0, bg: ["#38BDF8", "#0284C7"], title: "潛水天氣", subtitle: "我的潛水平台", action: "潛水天氣", icon: waveIcon },
+  { x: HALF_W, y: 0, bg: ["#475569", "#1E293B"], title: "股票快報", subtitle: "我的股票平台", action: "股票快報", icon: chartIcon },
+  { x: 0, y: HALF_H, bg: ["#F472B6", "#DB2777"], title: "音樂欣賞", subtitle: "我的音樂平台", action: "音樂欣賞", icon: musicIcon },
+  { x: HALF_W, y: HALF_H, bg: ["#34D399", "#059669"], title: "專案介紹", subtitle: "我的作品集", action: "專案介紹", icon: projectIcon },
 ];
 
 function renderPng(): Buffer {
@@ -121,7 +121,10 @@ function renderPng(): Buffer {
   const ctx = canvas.getContext("2d");
 
   for (const p of PANELS) {
-    ctx.fillStyle = p.bg;
+    const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + HALF_H);
+    grad.addColorStop(0, p.bg[0]);
+    grad.addColorStop(1, p.bg[1]);
+    ctx.fillStyle = grad;
     ctx.fillRect(p.x, p.y, HALF_W, HALF_H);
 
     const cx = p.x + HALF_W / 2;

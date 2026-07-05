@@ -83,9 +83,15 @@ export const UpdateProfileResponse = zod.object({
  */
 export const ListBroadcastsResponseItem = zod.object({
   "id": zod.number(),
-  "message": zod.string(),
-  "status": zod.enum(['sent', 'failed']),
+  "kind": zod.enum(['text', 'image', 'flex']),
+  "message": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
+  "linkUrl": zod.string().nullish(),
+  "linkLabel": zod.string().nullish(),
+  "status": zod.enum(['sent', 'failed', 'scheduled']),
   "errorMessage": zod.string().nullish(),
+  "scheduledAt": zod.string().nullish(),
   "sentAt": zod.string()
 })
 export const ListBroadcastsResponse = zod.array(ListBroadcastsResponseItem)
@@ -96,17 +102,37 @@ export const ListBroadcastsResponse = zod.array(ListBroadcastsResponseItem)
  */
 export const createBroadcastBodyMessageMax = 2000;
 
+export const createBroadcastBodyTitleMax = 100;
+
+export const createBroadcastBodyImageUrlMax = 2000;
+
+export const createBroadcastBodyLinkUrlMax = 2000;
+
+export const createBroadcastBodyLinkLabelMax = 20;
+
 
 
 export const CreateBroadcastBody = zod.object({
-  "message": zod.string().min(1).max(createBroadcastBodyMessageMax)
+  "kind": zod.enum(['text', 'image', 'flex']),
+  "message": zod.string().max(createBroadcastBodyMessageMax).nullish(),
+  "title": zod.string().max(createBroadcastBodyTitleMax).nullish(),
+  "imageUrl": zod.string().max(createBroadcastBodyImageUrlMax).nullish(),
+  "linkUrl": zod.string().max(createBroadcastBodyLinkUrlMax).nullish(),
+  "linkLabel": zod.string().max(createBroadcastBodyLinkLabelMax).nullish(),
+  "scheduledAt": zod.string().nullish()
 })
 
 export const CreateBroadcastResponse = zod.object({
   "id": zod.number(),
-  "message": zod.string(),
-  "status": zod.enum(['sent', 'failed']),
+  "kind": zod.enum(['text', 'image', 'flex']),
+  "message": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
+  "linkUrl": zod.string().nullish(),
+  "linkLabel": zod.string().nullish(),
+  "status": zod.enum(['sent', 'failed', 'scheduled']),
   "errorMessage": zod.string().nullish(),
+  "scheduledAt": zod.string().nullish(),
   "sentAt": zod.string()
 })
 

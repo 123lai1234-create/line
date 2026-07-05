@@ -12,13 +12,72 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
   { label: "ℹ️ 關於我", text: "關於我" },
 ];
 
+interface Service {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  action: string;
+}
+
+const SERVICES: Service[] = [
+  { emoji: "🤿", title: "潛水天氣", subtitle: "各潛點即時海況與更多數據", action: "潛水天氣" },
+  { emoji: "📈", title: "股票快報", subtitle: "即時股價、漲跌與市場數據", action: "股票快報" },
+  { emoji: "🎧", title: "音樂欣賞", subtitle: "我發表音樂與創作的平台", action: "音樂欣賞" },
+  { emoji: "🧬", title: "專案介紹", subtitle: "我的作品集與專案", action: "專案介紹" },
+];
+
+function serviceRow(s: Service): LineMessage {
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "md",
+    paddingAll: "12px",
+    cornerRadius: "12px",
+    backgroundColor: "#F8FAFC",
+    action: { type: "message", label: s.title, text: s.action },
+    contents: [
+      { type: "text", text: s.emoji, size: "xl", flex: 0, gravity: "center" },
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "xs",
+        contents: [
+          { type: "text", text: s.title, weight: "bold", size: "sm", color: "#0F172A" },
+          { type: "text", text: s.subtitle, size: "xxs", color: "#64748B", wrap: true },
+        ],
+      },
+      { type: "text", text: "›", size: "xl", color: "#CBD5E1", flex: 0, gravity: "center" },
+    ],
+  };
+}
+
 export function mainMenu(botName: string): LineMessage[] {
-  return [
-    textMessage(
-      `嗨,我是${botName} 👋\n我可以幫你這些服務,點下面按鈕或直接打關鍵字都可以 👇\n\n🤿 潛水天氣 — 我的潛水平台\n📈 股票快報 — 我的股票平台\n🎧 音樂欣賞 — 我的音樂平台\n🧬 專案介紹 — 我的作品集`,
-      MAIN_MENU_ITEMS,
-    ),
-  ];
+  const bubble: LineMessage = {
+    type: "flex",
+    altText: `嗨,我是${botName},這是服務選單`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#4F46E5",
+        paddingAll: "20px",
+        contents: [
+          { type: "text", text: `嗨,我是${botName} 👋`, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: "點下面選單,或直接打關鍵字都可以", color: "#E0E7FF", size: "xs", margin: "sm", wrap: true },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "16px",
+        contents: SERVICES.map(serviceRow),
+      },
+    },
+  };
+  return [{ ...bubble, quickReply: textMessage("", MAIN_MENU_ITEMS).quickReply as Record<string, unknown> }];
 }
 
 export function aboutMessage(introMessage: string, websiteUrl: string): LineMessage[] {

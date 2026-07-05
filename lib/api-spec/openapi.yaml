@@ -242,27 +242,56 @@ components:
           minLength: 1
     Broadcast:
       type: object
-      required: [id, message, status, sentAt]
+      required: [id, kind, status, sentAt]
       properties:
         id:
           type: integer
-        message:
+        kind:
           type: string
+          enum: [text, image, flex]
+        message:
+          type: ["string", "null"]
+        title:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        linkUrl:
+          type: ["string", "null"]
+        linkLabel:
+          type: ["string", "null"]
         status:
           type: string
-          enum: [sent, failed]
+          enum: [sent, failed, scheduled]
         errorMessage:
+          type: ["string", "null"]
+        scheduledAt:
           type: ["string", "null"]
         sentAt:
           type: string
     BroadcastInput:
       type: object
-      required: [message]
+      required: [kind]
       properties:
-        message:
+        kind:
           type: string
-          minLength: 1
+          enum: [text, image, flex]
+        message:
+          type: ["string", "null"]
           maxLength: 2000
+        title:
+          type: ["string", "null"]
+          maxLength: 100
+        imageUrl:
+          type: ["string", "null"]
+          maxLength: 2000
+        linkUrl:
+          type: ["string", "null"]
+          maxLength: 2000
+        linkLabel:
+          type: ["string", "null"]
+          maxLength: 20
+        scheduledAt:
+          type: ["string", "null"]
     Stats:
       type: object
       required: [followerCount, followerCountDate, targetLimit, totalUsageThisMonth, broadcastCount]

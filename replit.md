@@ -29,7 +29,9 @@
 - `scripts/src/setup-line-richmenu.ts` — renders the 2x2 rich menu PNG (`@napi-rs/canvas`, jf-openhuninn font) and publishes it to LINE; run `pnpm --filter @workspace/scripts run setup-line-richmenu` (preview) or prefix `APPLY=1` to publish
 - `artifacts/api-server/src/lib/auth.ts` — stateless signed-cookie session auth for the admin panel
 - `artifacts/api-server/src/routes/line-webhook.ts` — LINE webhook handler (`POST /api/line/webhook`); routes text `message` events through `routeMessage` (keyword/rich-menu services) and sends the main menu on `follow`
-- `artifacts/api-server/src/routes/{auth,profile,broadcasts,stats}.ts` — admin panel API routes
+- `artifacts/api-server/src/routes/{auth,profile,broadcasts,stats}.ts` — admin panel API routes (broadcasts supports text/image/flex-card kinds + scheduled sends)
+- `artifacts/api-server/src/lib/broadcast-build.ts` — turns a stored broadcast (kind + fields) into LINE message payload(s)
+- `artifacts/api-server/src/lib/scheduler.ts` — polls for due `scheduled` broadcasts every 30s and sends them (atomically claims each row to avoid double-sends); started from `index.ts`
 - `lib/db/src/schema/profile.ts` — singleton bot profile row (name, intro message, website URL)
 - `lib/db/src/schema/broadcasts.ts` — broadcast history log
 - `lib/api-spec/openapi.yaml` — source of truth for the admin panel API contract
@@ -45,7 +47,7 @@
 ## Product
 
 - Anyone who messages the LINE bot (or adds it as a friend) automatically receives an intro message plus the portfolio website link.
-- The owner manages everything from a private admin panel: edit the bot's name/intro message/website URL, view stats (followers, message quota, broadcast count), and send push broadcasts to all LINE friends with history tracking.
+- The owner manages everything from a private admin panel: edit the bot's name/intro message/website URL, view stats (followers, message quota, broadcast count), and send push broadcasts (text, image, or card/flex — sent now or scheduled for later) to all LINE friends with history tracking.
 
 ## User preferences
 

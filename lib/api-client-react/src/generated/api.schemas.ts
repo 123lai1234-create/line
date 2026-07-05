@@ -37,29 +37,83 @@ export interface ProfileUpdate {
   botName: string;
 }
 
+export type BroadcastKind = typeof BroadcastKind[keyof typeof BroadcastKind];
+
+
+export const BroadcastKind = {
+  text: 'text',
+  image: 'image',
+  flex: 'flex',
+} as const;
+
 export type BroadcastStatus = typeof BroadcastStatus[keyof typeof BroadcastStatus];
 
 
 export const BroadcastStatus = {
   sent: 'sent',
   failed: 'failed',
+  scheduled: 'scheduled',
 } as const;
 
 export interface Broadcast {
   id: number;
-  message: string;
+  kind: BroadcastKind;
+  /** @nullable */
+  message?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  linkUrl?: string | null;
+  /** @nullable */
+  linkLabel?: string | null;
   status: BroadcastStatus;
   /** @nullable */
   errorMessage?: string | null;
+  /** @nullable */
+  scheduledAt?: string | null;
   sentAt: string;
 }
 
+export type BroadcastInputKind = typeof BroadcastInputKind[keyof typeof BroadcastInputKind];
+
+
+export const BroadcastInputKind = {
+  text: 'text',
+  image: 'image',
+  flex: 'flex',
+} as const;
+
 export interface BroadcastInput {
+  kind: BroadcastInputKind;
   /**
-     * @minLength 1
      * @maxLength 2000
+     * @nullable
      */
-  message: string;
+  message?: string | null;
+  /**
+     * @maxLength 100
+     * @nullable
+     */
+  title?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  imageUrl?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  linkUrl?: string | null;
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  linkLabel?: string | null;
+  /** @nullable */
+  scheduledAt?: string | null;
 }
 
 export interface Stats {

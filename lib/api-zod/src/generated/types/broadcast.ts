@@ -5,13 +5,26 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BroadcastKind } from './broadcastKind';
 import type { BroadcastStatus } from './broadcastStatus';
 
 export interface Broadcast {
   id: number;
-  message: string;
+  kind: BroadcastKind;
+  /** @nullable */
+  message?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  linkUrl?: string | null;
+  /** @nullable */
+  linkLabel?: string | null;
   status: BroadcastStatus;
   /** @nullable */
   errorMessage?: string | null;
+  /** @nullable */
+  scheduledAt?: string | null;
   sentAt: string;
 }
