@@ -2,17 +2,31 @@ import { barChart, fetchWithTimeout, quickReply, subtleLink, type LineMessage, t
 
 const STOCK_URL = "https://donttalk.vercel.app/stock";
 
-const SYMBOLS: { sym: string; name: string; code: string }[] = [
-  { sym: "^TWII", name: "加權指數", code: "TAIEX" },
-  { sym: "2330.TW", name: "台積電", code: "2330" },
-  { sym: "2317.TW", name: "鴻海", code: "2317" },
-  { sym: "2454.TW", name: "聯發科", code: "2454" },
-  { sym: "0050.TW", name: "元大台灣50", code: "0050" },
+type StockCat = "index" | "large" | "etf";
+
+const SYMBOLS: { sym: string; name: string; code: string; cat: StockCat }[] = [
+  { sym: "^TWII", name: "加權指數", code: "TAIEX", cat: "index" },
+  // 權值股
+  { sym: "2330.TW", name: "台積電", code: "2330", cat: "large" },
+  { sym: "2317.TW", name: "鴻海", code: "2317", cat: "large" },
+  { sym: "2454.TW", name: "聯發科", code: "2454", cat: "large" },
+  { sym: "2308.TW", name: "台達電", code: "2308", cat: "large" },
+  { sym: "2382.TW", name: "廣達", code: "2382", cat: "large" },
+  { sym: "2303.TW", name: "聯電", code: "2303", cat: "large" },
+  { sym: "2412.TW", name: "中華電", code: "2412", cat: "large" },
+  { sym: "2881.TW", name: "富邦金", code: "2881", cat: "large" },
+  { sym: "2882.TW", name: "國泰金", code: "2882", cat: "large" },
+  { sym: "2603.TW", name: "長榮", code: "2603", cat: "large" },
+  // ETF
+  { sym: "0050.TW", name: "元大台灣50", code: "0050", cat: "etf" },
+  { sym: "0056.TW", name: "元大高股息", code: "0056", cat: "etf" },
+  { sym: "00878.TW", name: "國泰永續高股息", code: "00878", cat: "etf" },
 ];
 
 interface Quote {
   name: string;
   code: string;
+  cat: StockCat;
   price: number | null;
   change: number | null;
   pct: number | null;
@@ -22,26 +36,26 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
+async function fetchQuote(sym: string, name: string, code: string, cat: StockCat): Promise<Quote> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
     const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return { name, code, price: null, change: null, pct: null };
+    if (!res.ok) return { name, code, cat, price: null, change: null, pct: null };
     const data = (await res.json()) as {
       chart?: { result?: { meta?: Record<string, unknown> }[] };
     };
     const meta = data.chart?.result?.[0]?.meta;
-    if (!meta) return { name, code, price: null, change: null, pct: null };
+    if (!meta) return { name, code, cat, price: null, change: null, pct: null };
 
     const price = num(meta.regularMarketPrice);
     const prev = num(meta.chartPreviousClose) ?? num(meta.previousClose);
     if (price === null || prev === null || prev === 0) {
-      return { name, code, price, change: null, pct: null };
+      return { name, code, cat, price, change: null, pct: null };
     }
     const change = price - prev;
-    return { name, code, price, change, pct: (change / prev) * 100 };
+    return { name, code, cat, price, change, pct: (change / prev) * 100 };
   } catch {
-    return { name, code, price: null, change: null, pct: null };
+    return { name, code, cat, price: null, change: null, pct: null };
   }
 }
 
@@ -151,51 +165,94 @@ function quoteRow(q: Quote): LineMessage {
   };
 }
 
-function stockCard(quotes: Quote[], updated: string): LineMessage {
-  const [index, ...rest] = quotes;
+// 小節標題(灰色英中對照)
+function sectionLabel(text: string): LineMessage {
+  return { type: "text", text, size: "xs", weight: "bold", color: "#94A3B8", margin: "lg" };
+}
+
+// 一組股票列(彼此以細線分隔)
+function quoteRows(items: Quote[]): LineMessage {
   const rows: LineMessage[] = [];
-  rest.forEach((q, i) => {
+  items.forEach((q, i) => {
     if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
     rows.push(quoteRow(q));
   });
+  return { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows };
+}
 
-  const body: LineMessage[] = [
-    {
+// 卡片頂端的 MARKET UPDATE 標頭列
+function marketHeader(caption: string): LineMessage {
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    contents: [
+      { type: "text", text: "MARKET UPDATE", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+      { type: "filler" },
+      { type: "text", text: caption, size: "xxs", color: "#CBD5E1", align: "end" },
+    ],
+  };
+}
+
+// 單一 bubble(白底 + 更新時間 + 網站連結 footer)
+function stockBubble(contents: LineMessage[], updated: string): LineMessage {
+  return {
+    type: "bubble",
+    size: "mega",
+    body: {
       type: "box",
-      layout: "horizontal",
-      alignItems: "center",
-      contents: [
-        { type: "text", text: "MARKET UPDATE", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
-        { type: "filler" },
-        { type: "text", text: "Yahoo Finance ・ 即時", size: "xxs", color: "#CBD5E1", align: "end" },
-      ],
+      layout: "vertical",
+      paddingAll: "20px",
+      spacing: "none",
+      contents: [...contents, { type: "text", text: `更新 ${updated}`, size: "xxs", color: "#CBD5E1", margin: "lg" }],
     },
-  ];
-  if (index) body.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(index)] });
-  body.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
-  body.push({ type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows });
-  body.push({ type: "text", text: `更新 ${updated}`, size: "xxs", color: "#CBD5E1", margin: "lg" });
+    footer: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "12px",
+      paddingTop: "0px",
+      contents: [subtleLink("查看均線買賣訊號", STOCK_URL)],
+    },
+  };
+}
+
+// 台股快報:因股票數量多,拆成 carousel 多頁(每頁 ≤6 檔,避免超過 LINE flex 10KB 上限)
+function stockCard(quotes: Quote[], updated: string): LineMessage {
+  const index = quotes.find((q) => q.cat === "index");
+  const large = quotes.filter((q) => q.cat === "large");
+  const etf = quotes.filter((q) => q.cat === "etf");
+
+  const bubbles: LineMessage[] = [];
+
+  // 第一頁:大盤指數 + 前段權值股
+  const firstLarge = large.slice(0, 6);
+  const restLarge = large.slice(6);
+  const page1: LineMessage[] = [marketHeader("Yahoo Finance ・ 即時")];
+  if (index) page1.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(index)] });
+  if (firstLarge.length) {
+    page1.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+    page1.push(sectionLabel("權值股"));
+    page1.push(quoteRows(firstLarge));
+  }
+  bubbles.push(stockBubble(page1, updated));
+
+  // 第二頁:其餘權值股 + ETF
+  const page2: LineMessage[] = [marketHeader("熱門個股 ・ ETF")];
+  if (restLarge.length) {
+    page2.push(sectionLabel("權值股"));
+    page2.push(quoteRows(restLarge));
+  }
+  if (etf.length) {
+    if (restLarge.length) page2.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+    page2.push(sectionLabel("ETF"));
+    page2.push(quoteRows(etf));
+  }
+  if (page2.length > 1) bubbles.push(stockBubble(page2, updated));
 
   return {
     type: "flex",
     altText: "台股快報",
-    contents: {
-      type: "bubble",
-      body: {
-        type: "box",
-        layout: "vertical",
-        paddingAll: "20px",
-        spacing: "none",
-        contents: body,
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        paddingAll: "12px",
-        paddingTop: "0px",
-        contents: [subtleLink("查看均線買賣訊號", STOCK_URL)],
-      },
-    },
+    contents: { type: "carousel", contents: bubbles },
   };
 }
 
@@ -212,11 +269,14 @@ function updatedNow(): string {
 
 // 挑股票看走勢的 chips(postback)+ 提示可自行輸入代號
 function pickChips(): QuickItem[] {
-  return SYMBOLS.map((s) => ({
-    label: s.name,
-    data: `s=stk&sym=${s.sym}`,
-    displayText: `${s.name} 走勢`,
-  }));
+  // LINE quick reply 上限 13 顆;排除大盤指數,留給個股/ETF
+  return SYMBOLS.filter((s) => s.cat !== "index")
+    .slice(0, 13)
+    .map((s) => ({
+      label: s.name,
+      data: `s=stk&sym=${s.sym}`,
+      displayText: `${s.name} 走勢`,
+    }));
 }
 
 // 把使用者輸入解析成代號:認名稱、4~6 位代號(自動補 .TW)
@@ -400,7 +460,7 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
 }
 
 export async function stockMenu(): Promise<LineMessage[]> {
-  const quotes = await Promise.all(SYMBOLS.map((s) => fetchQuote(s.sym, s.name, s.code)));
+  const quotes = await Promise.all(SYMBOLS.map((s) => fetchQuote(s.sym, s.name, s.code, s.cat)));
   const card = stockCard(quotes, updatedNow());
   card.quickReply = quickReply(pickChips());
   return [card];
