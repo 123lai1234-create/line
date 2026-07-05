@@ -111,7 +111,7 @@ const projectIcon: IconFn = (ctx, cx, cy) => {
 const PANELS: Panel[] = [
   { x: 0, y: 0, bg: "#0EA5E9", title: "潛水天氣", subtitle: "各潛點即時海況", action: "潛水天氣", icon: waveIcon },
   { x: HALF_W, y: 0, bg: "#334155", title: "股票快報", subtitle: "即時股價與漲跌", action: "股票快報", icon: chartIcon },
-  { x: 0, y: HALF_H, bg: "#DB2777", title: "音樂欣賞", subtitle: "找歌與推薦", action: "音樂欣賞", icon: musicIcon },
+  { x: 0, y: HALF_H, bg: "#DB2777", title: "音樂欣賞", subtitle: "我的音樂平台", action: "音樂欣賞", icon: musicIcon },
   { x: HALF_W, y: HALF_H, bg: "#059669", title: "專案介紹", subtitle: "我的作品集", action: "專案介紹", icon: projectIcon },
 ];
 

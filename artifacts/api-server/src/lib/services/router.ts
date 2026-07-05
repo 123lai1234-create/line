@@ -1,7 +1,7 @@
 import { textMessage, type LineMessage, type QuickItem } from "./flex";
 import { weatherMenu, weatherResult } from "./weather";
 import { stockMenu, stockResult } from "./stock";
-import { musicMenu, musicResult } from "./music";
+import { musicMenu } from "./music";
 import { projectsMenu, projectResult } from "./projects";
 
 const MAIN_MENU_ITEMS: QuickItem[] = [
@@ -15,7 +15,7 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
 export function mainMenu(botName: string): LineMessage[] {
   return [
     textMessage(
-      `嗨,我是${botName} 👋\n我可以幫你這些服務,點下面按鈕或直接打關鍵字都可以 👇\n\n🤿 潛水天氣 — 各潛點即時海況\n📈 股票快報 — 即時股價與漲跌\n🎧 音樂欣賞 — 找歌與推薦\n🧬 專案介紹 — 我的作品集`,
+      `嗨,我是${botName} 👋\n我可以幫你這些服務,點下面按鈕或直接打關鍵字都可以 👇\n\n🤿 潛水天氣 — 各潛點即時海況\n📈 股票快報 — 即時股價與漲跌\n🎧 音樂欣賞 — 我的音樂平台\n🧬 專案介紹 — 我的作品集`,
       MAIN_MENU_ITEMS,
     ),
   ];
@@ -59,8 +59,7 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   }
 
   if (/音樂|歌|聽|music|song/i.test(text)) {
-    const q = text.replace(/音樂欣賞|音樂|推薦/g, "").trim();
-    return q.length > 0 && !/^(音樂|歌|聽|music|song)$/i.test(text) ? musicResult(text) : musicMenu();
+    return musicMenu();
   }
 
   if (/專案|作品|project|介紹/i.test(text)) {
