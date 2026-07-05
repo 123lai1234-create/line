@@ -1,4 +1,4 @@
-import { fetchWithTimeout, pill, type LineMessage } from "./flex";
+import { fetchWithTimeout, subtleLink, type LineMessage } from "./flex";
 
 const STOCK_URL = "https://donttalk.vercel.app/stock";
 
@@ -51,9 +51,10 @@ function dirOf(change: number | null): Dir {
   if (change === null || change === 0) return "flat";
   return change > 0 ? "up" : "down";
 }
-function priceColor(change: number | null): string {
+
+function changeColor(change: number | null): string {
   const d = dirOf(change);
-  return d === "up" ? "#DC2626" : d === "down" ? "#16A34A" : "#0F172A";
+  return d === "up" ? "#DC2626" : d === "down" ? "#16A34A" : "#94A3B8";
 }
 
 function fmtPrice(p: number | null): string {
@@ -61,65 +62,77 @@ function fmtPrice(p: number | null): string {
   return p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// 漲跌幅彩色標籤
-function changePill(q: Quote): LineMessage {
-  if (q.change === null || q.pct === null) return pill("—", "#F1F5F9", "#64748B");
+// 漲跌:上排帶箭頭的絕對值、下排百分比,同色靠右
+interface ChangeParts {
+  line1: string;
+  line2: string;
+  color: string;
+}
+function changeParts(q: Quote): ChangeParts {
+  if (q.change === null || q.pct === null) return { line1: "—", line2: "", color: "#94A3B8" };
   const d = dirOf(q.change);
-  const bg = d === "up" ? "#FEE2E2" : d === "down" ? "#DCFCE7" : "#F1F5F9";
-  const col = d === "up" ? "#DC2626" : d === "down" ? "#16A34A" : "#64748B";
   const arrow = d === "up" ? "▲" : d === "down" ? "▼" : "－";
   const sign = q.change > 0 ? "+" : "";
-  return pill(`${arrow} ${sign}${q.pct.toFixed(2)}%`, bg, col);
+  return {
+    line1: `${arrow} ${sign}${q.change.toFixed(2)}`,
+    line2: `${sign}${q.pct.toFixed(2)}%`,
+    color: changeColor(q.change),
+  };
 }
 
-// 大盤指數:深色特寫卡
-function indexFeature(q: Quote): LineMessage {
-  const sign = q.change !== null && q.change > 0 ? "+" : "";
-  const chgText = q.change !== null ? `${sign}${q.change.toFixed(2)}` : "—";
-  const chgColor =
-    q.change === null || q.change === 0 ? "#94A3B8" : q.change > 0 ? "#F87171" : "#4ADE80";
+function changeBlock(c: ChangeParts, big = false): LineMessage {
   return {
     type: "box",
     layout: "vertical",
-    backgroundColor: "#0F172A",
-    cornerRadius: "14px",
-    paddingAll: "16px",
-    spacing: "sm",
+    flex: 0,
     contents: [
-      { type: "text", text: `${q.name} ${q.code}`, size: "xs", color: "#94A3B8", weight: "bold" },
-      {
-        type: "box",
-        layout: "horizontal",
-        alignItems: "center",
-        contents: [
-          { type: "text", text: fmtPrice(q.price), size: "xxl", weight: "bold", color: "#FFFFFF", flex: 0 },
-          { type: "filler" },
-          changePill(q),
-        ],
-      },
-      { type: "text", text: chgText, size: "sm", color: chgColor, weight: "bold" },
+      { type: "text", text: c.line1, size: big ? "sm" : "xs", weight: "bold", color: c.color, align: "end" },
+      ...(c.line2
+        ? [{ type: "text", text: c.line2, size: big ? "xs" : "xxs", color: c.color, align: "end" } as LineMessage]
+        : []),
     ],
   };
 }
 
-// 個股列:名稱/代號 + 價格 + 漲跌標籤
+// 大盤指數:白底特寫,深色大數字 + 靠右彩色漲跌
+function indexFeature(q: Quote): LineMessage {
+  const c = changeParts(q);
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    contents: [
+      { type: "text", text: `${q.name}(${q.code})`, size: "xs", color: "#64748B" },
+      {
+        type: "box",
+        layout: "horizontal",
+        alignItems: "flex-end",
+        contents: [
+          { type: "text", text: fmtPrice(q.price), size: "xxl", weight: "bold", color: "#0F172A", flex: 0 },
+          { type: "filler" },
+          changeBlock(c, true),
+        ],
+      },
+    ],
+  };
+}
+
+// 個股列:名稱/代號 + 深色價格 + 靠右彩色漲跌欄
 function quoteRow(q: Quote): LineMessage {
+  const c = changeParts(q);
   return {
     type: "box",
     layout: "horizontal",
-    spacing: "sm",
-    paddingAll: "12px",
-    cornerRadius: "12px",
-    backgroundColor: "#F8FAFC",
     alignItems: "center",
+    paddingTop: "10px",
+    paddingBottom: "10px",
     contents: [
       {
         type: "box",
         layout: "vertical",
-        flex: 3,
-        spacing: "xs",
+        flex: 4,
         contents: [
-          { type: "text", text: q.name, size: "sm", weight: "bold", color: "#0F172A" },
+          { type: "text", text: q.name, size: "sm", weight: "bold", color: "#1E293B" },
           { type: "text", text: q.code, size: "xxs", color: "#94A3B8" },
         ],
       },
@@ -128,66 +141,59 @@ function quoteRow(q: Quote): LineMessage {
         text: fmtPrice(q.price),
         size: "sm",
         weight: "bold",
-        color: priceColor(q.change),
+        color: "#1E293B",
         align: "end",
         gravity: "center",
         flex: 3,
       },
-      changePill(q),
+      { type: "box", layout: "vertical", flex: 3, justifyContent: "center", contents: [changeBlock(c)] },
     ],
   };
 }
 
 function stockCard(quotes: Quote[], updated: string): LineMessage {
   const [index, ...rest] = quotes;
-  const bodyContents: LineMessage[] = [];
-  if (index) bodyContents.push(indexFeature(index));
-  bodyContents.push(...rest.map(quoteRow));
+  const rows: LineMessage[] = [];
+  rest.forEach((q, i) => {
+    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
+    rows.push(quoteRow(q));
+  });
+
+  const body: LineMessage[] = [
+    {
+      type: "box",
+      layout: "horizontal",
+      alignItems: "center",
+      contents: [
+        { type: "text", text: "MARKET UPDATE", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+        { type: "filler" },
+        { type: "text", text: "Yahoo Finance ・ 即時", size: "xxs", color: "#CBD5E1", align: "end" },
+      ],
+    },
+  ];
+  if (index) body.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(index)] });
+  body.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+  body.push({ type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows });
+  body.push({ type: "text", text: `更新 ${updated}`, size: "xxs", color: "#CBD5E1", margin: "lg" });
 
   return {
     type: "flex",
-    altText: "📈 台股快報",
+    altText: "台股快報",
     contents: {
       type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#1E293B",
-        paddingAll: "20px",
-        spacing: "xs",
-        contents: [
-          {
-            type: "box",
-            layout: "horizontal",
-            alignItems: "center",
-            contents: [
-              { type: "text", text: "📈 台股快報", color: "#FFFFFF", weight: "bold", size: "xl", flex: 0 },
-              { type: "filler" },
-              pill("紅漲綠跌", "#334155", "#E2E8F0"),
-            ],
-          },
-          { type: "text", text: `更新 ${updated}`, color: "#94A3B8", size: "xxs" },
-        ],
-      },
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
-        paddingAll: "14px",
-        contents: bodyContents,
+        paddingAll: "20px",
+        spacing: "none",
+        contents: body,
       },
       footer: {
         type: "box",
         layout: "vertical",
-        contents: [
-          {
-            type: "button",
-            style: "primary",
-            height: "sm",
-            color: "#1E293B",
-            action: { type: "uri", label: "看均線買賣訊號", uri: STOCK_URL },
-          },
-        ],
+        paddingAll: "12px",
+        paddingTop: "0px",
+        contents: [subtleLink("查看均線買賣訊號", STOCK_URL)],
       },
     },
   };

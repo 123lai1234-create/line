@@ -1,4 +1,4 @@
-import { fetchWithTimeout, gaugeBar, linkButton, type LineMessage } from "./flex";
+import { fetchWithTimeout, dot, pill, subtleLink, type LineMessage } from "./flex";
 
 const DIVING_URL = "https://donttalk.vercel.app/diving";
 // 龍洞（東北角）
@@ -85,40 +85,68 @@ function isOffshoreWest(deg: number): boolean {
   return deg > 247.5 && deg < 292.5;
 }
 
-const DOT: Record<Severity, string> = { 0: "🟢", 1: "🟡", 2: "🔴" };
+const SEV_DOT: Record<Severity, string> = { 0: "#22C55E", 1: "#F59E0B", 2: "#EF4444" };
 
-function verdict(sev: Severity): { label: string; color: string } {
-  if (sev === 0) return { label: "🟢 GO・適合下水", color: "#10B981" };
-  if (sev === 1) return { label: "🟡 CAUTION・斟酌", color: "#F59E0B" };
-  return { label: "🔴 NO-GO・建議改期", color: "#EF4444" };
+// 今日海況徽章:低調的膠囊標籤,顏色即訊號
+function verdictBadge(sev: Severity): LineMessage {
+  if (sev === 0) return pill("適合下水", "#F0FDF4", "#16A34A");
+  if (sev === 1) return pill("建議斟酌", "#FFFBEB", "#D97706");
+  return pill("不建議下水", "#FEF2F2", "#DC2626");
 }
 
-// 單一指標:標籤 + 數值(+燈號)+ 三段式指標條
+function verdictAlt(sev: Severity): string {
+  if (sev === 0) return "適合下水";
+  if (sev === 1) return "建議斟酌";
+  return "不建議下水";
+}
+
+function reasonText(sev: Severity): string {
+  if (sev === 0) return "海況穩定，適合下水，仍請留意自身狀況與裝備。";
+  if (sev === 1) return "海況普通，請依經驗與裝備斟酌是否下水。";
+  return "浪況不穩，建議改期再訪。";
+}
+
+// 單一指標:標籤 + 數值 + 狀態圓點(取代指標條,更精簡)
 function metricRow(label: string, value: string, sev: Severity): LineMessage {
   return {
     type: "box",
-    layout: "vertical",
-    spacing: "xs",
-    margin: "lg",
+    layout: "horizontal",
+    alignItems: "center",
+    paddingTop: "10px",
+    paddingBottom: "10px",
     contents: [
+      { type: "text", text: label, size: "sm", color: "#64748B", flex: 3, gravity: "center" },
+      {
+        type: "text",
+        text: value,
+        size: "sm",
+        weight: "bold",
+        color: "#1E293B",
+        align: "end",
+        gravity: "center",
+        flex: 4,
+      },
       {
         type: "box",
-        layout: "horizontal",
-        contents: [
-          { type: "text", text: label, size: "sm", color: "#475569", flex: 1, gravity: "center" },
-          {
-            type: "text",
-            text: `${value} ${DOT[sev]}`,
-            size: "sm",
-            weight: "bold",
-            color: "#0F172A",
-            align: "end",
-            flex: 1,
-            gravity: "center",
-          },
-        ],
+        layout: "vertical",
+        flex: 0,
+        justifyContent: "center",
+        paddingStart: "10px",
+        contents: [dot(SEV_DOT[sev])],
       },
-      gaugeBar(sev),
+    ],
+  };
+}
+
+function eyebrow(): LineMessage {
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    contents: [
+      { type: "text", text: "DIVE CONDITIONS", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+      { type: "filler" },
+      { type: "text", text: "龍洞 Long Dong", size: "xxs", color: "#CBD5E1", align: "end" },
     ],
   };
 }
@@ -126,29 +154,33 @@ function metricRow(label: string, value: string, sev: Severity): LineMessage {
 function unavailableCard(): LineMessage {
   return {
     type: "flex",
-    altText: "🤿 龍洞浪況 — 資料暫時抓不到",
+    altText: "龍洞海況 — 資料暫時抓不到",
     contents: {
       type: "bubble",
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "md",
         paddingAll: "20px",
+        spacing: "sm",
         contents: [
-          { type: "text", text: "🤿 龍洞浪況", weight: "bold", size: "lg", color: "#0F172A" },
+          eyebrow(),
+          { type: "text", text: "海況資料暫時抓不到", weight: "bold", size: "lg", color: "#0F172A", margin: "md" },
           {
             type: "text",
-            text: "海況資料暫時抓不到,請稍後再試一次 🌊",
+            text: "請稍後再試一次，或直接查看完整浪況資料。",
             wrap: true,
             size: "sm",
             color: "#64748B",
+            margin: "sm",
           },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
-        contents: [linkButton("看完整浪況(Windguru/氣象署)", DIVING_URL, "#0EA5E9")],
+        paddingAll: "12px",
+        paddingTop: "0px",
+        contents: [subtleLink("查看完整浪況資料", DIVING_URL)],
       },
     },
   };
@@ -158,26 +190,31 @@ function conditionsCard(c: Conditions): LineMessage {
   const severities: Severity[] = [];
   const rows: LineMessage[] = [];
 
+  function pushRow(label: string, value: string, sev: Severity) {
+    if (rows.length > 0) rows.push({ type: "separator", color: "#F1F5F9" });
+    rows.push(metricRow(label, value, sev));
+  }
+
   if (c.waveHeight !== null) {
     const s = sevWave(c.waveHeight);
     severities.push(s);
-    rows.push(metricRow("🌊 浪高", `${c.waveHeight.toFixed(1)} m`, s));
+    pushRow("浪高", `${c.waveHeight.toFixed(1)} m`, s);
   }
   if (c.wavePeriod !== null) {
     const s = sevPeriod(c.wavePeriod);
     severities.push(s);
-    rows.push(metricRow("📏 週期", `${c.wavePeriod.toFixed(1)} s`, s));
+    pushRow("週期", `${c.wavePeriod.toFixed(1)} s`, s);
   }
   if (c.windSpeed !== null) {
     const s = sevWind(c.windSpeed);
     severities.push(s);
     const dir = c.windDir !== null ? ` ${compass(c.windDir)}風` : "";
-    rows.push(metricRow("🌬️ 風速", `${c.windSpeed.toFixed(1)} m/s${dir}`, s));
+    pushRow("風速", `${c.windSpeed.toFixed(1)} m/s${dir}`, s);
   }
   if (c.seaTemp !== null) {
     const s = sevTemp(c.seaTemp);
     severities.push(s);
-    rows.push(metricRow("🌡️ 水溫", `${c.seaTemp.toFixed(1)} °C`, s));
+    pushRow("水溫", `${c.seaTemp.toFixed(1)} °C`, s);
   }
 
   const offshore = c.windDir !== null && isOffshoreWest(c.windDir);
@@ -185,10 +222,25 @@ function conditionsCard(c: Conditions): LineMessage {
   // 龍洞離岸風(西風)是東北角溺水主因之一 → 直接列為 NO-GO
   if (offshore) overall = 2;
 
-  const v = verdict(overall);
-  const bodyContents: LineMessage[] = [...rows];
+  const body: LineMessage[] = [
+    eyebrow(),
+    {
+      type: "box",
+      layout: "horizontal",
+      alignItems: "center",
+      margin: "lg",
+      contents: [
+        { type: "text", text: "今日海況", size: "sm", weight: "bold", color: "#475569", flex: 0, gravity: "center" },
+        { type: "filler" },
+        verdictBadge(overall),
+      ],
+    },
+    { type: "separator", margin: "lg", color: "#F1F5F9" },
+    { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows },
+  ];
+
   if (offshore) {
-    bodyContents.push({
+    body.push({
       type: "box",
       layout: "vertical",
       backgroundColor: "#FEF2F2",
@@ -198,49 +250,48 @@ function conditionsCard(c: Conditions): LineMessage {
       contents: [
         {
           type: "text",
-          text: "🔴 目前偏西風(離岸風),會把潛水員推向外海,是東北角溺水主因之一,強烈建議改期。",
+          text: "目前偏西風(離岸風)會把潛水員推向外海，是東北角溺水主因之一，強烈建議改期。",
           wrap: true,
           size: "xs",
           color: "#B91C1C",
         },
       ],
     });
+  } else {
+    body.push({
+      type: "box",
+      layout: "vertical",
+      backgroundColor: "#F8FAFC",
+      cornerRadius: "10px",
+      paddingAll: "12px",
+      margin: "lg",
+      contents: [{ type: "text", text: reasonText(overall), wrap: true, size: "xs", color: "#64748B" }],
+    });
   }
+
   const updated = c.time ? c.time.replace("T", " ") : "";
+  if (updated) {
+    body.push({ type: "text", text: `更新 ${updated}`, size: "xxs", color: "#CBD5E1", margin: "lg" });
+  }
 
   return {
     type: "flex",
-    altText: `🤿 龍洞浪況 ${v.label}`,
+    altText: `龍洞海況・${verdictAlt(overall)}`,
     contents: {
       type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: v.color,
-        paddingAll: "20px",
-        spacing: "xs",
-        contents: [
-          { type: "text", text: "🤿 龍洞・東北角浪況", color: "#FFFFFF", size: "sm", weight: "bold" },
-          { type: "text", text: v.label, color: "#FFFFFF", weight: "bold", size: "xl" },
-        ],
-      },
       body: {
         type: "box",
         layout: "vertical",
+        paddingAll: "20px",
         spacing: "none",
-        paddingAll: "16px",
-        contents: bodyContents,
+        contents: body,
       },
       footer: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
-        contents: [
-          ...(updated
-            ? [{ type: "text", text: `更新 ${updated}`, size: "xxs", color: "#94A3B8", align: "center" } as LineMessage]
-            : []),
-          linkButton("看完整浪況(Windguru/氣象署)", DIVING_URL, "#0EA5E9"),
-        ],
+        paddingAll: "12px",
+        paddingTop: "0px",
+        contents: [subtleLink("查看完整浪況資料", DIVING_URL)],
       },
     },
   };

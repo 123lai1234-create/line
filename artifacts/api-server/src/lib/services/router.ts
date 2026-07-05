@@ -1,4 +1,4 @@
-import { textMessage, quickReply, linkButton, type LineMessage, type QuickItem } from "./flex";
+import { textMessage, quickReply, subtleLink, type LineMessage, type QuickItem } from "./flex";
 import { weatherMenu } from "./weather";
 import { stockMenu } from "./stock";
 import { musicMenu } from "./music";
@@ -13,93 +13,52 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
 ];
 
 interface Service {
-  emoji: string;
   title: string;
-  subtitle: string;
   action: string;
-  accent: string;
 }
 
 const SERVICES: Service[] = [
-  { emoji: "🤿", title: "潛水天氣", subtitle: "龍洞即時浪況與 GO/CAUTION 判斷", action: "潛水天氣", accent: "#0EA5E9" },
-  { emoji: "📈", title: "股票快報", subtitle: "台股大盤與代表個股即時報價", action: "股票快報", accent: "#1E293B" },
-  { emoji: "🎧", title: "音樂欣賞", subtitle: "我發表音樂與創作的平台", action: "音樂欣賞", accent: "#DB2777" },
-  { emoji: "🧬", title: "專案介紹", subtitle: "我的作品集與專案", action: "專案介紹", accent: "#0F172A" },
+  { title: "潛水天氣", action: "潛水天氣" },
+  { title: "股票快報", action: "股票快報" },
+  { title: "音樂欣賞", action: "音樂欣賞" },
+  { title: "專案介紹", action: "專案介紹" },
 ];
 
 function serviceRow(s: Service): LineMessage {
   return {
     type: "box",
     layout: "horizontal",
-    spacing: "md",
-    paddingAll: "10px",
-    cornerRadius: "14px",
-    backgroundColor: "#F8FAFC",
     alignItems: "center",
+    paddingTop: "14px",
+    paddingBottom: "14px",
     action: { type: "message", label: s.title, text: s.action },
     contents: [
-      {
-        type: "box",
-        layout: "vertical",
-        width: "46px",
-        height: "46px",
-        cornerRadius: "12px",
-        backgroundColor: s.accent,
-        justifyContent: "center",
-        alignItems: "center",
-        flex: 0,
-        contents: [{ type: "text", text: s.emoji, size: "xl", align: "center", gravity: "center" }],
-      },
-      {
-        type: "box",
-        layout: "vertical",
-        flex: 1,
-        spacing: "xs",
-        justifyContent: "center",
-        contents: [
-          { type: "text", text: s.title, weight: "bold", size: "sm", color: "#0F172A" },
-          { type: "text", text: s.subtitle, size: "xxs", color: "#64748B", wrap: true },
-        ],
-      },
+      { type: "text", text: s.title, size: "md", weight: "bold", color: "#334155", flex: 1, gravity: "center" },
       { type: "text", text: "›", size: "xl", color: "#CBD5E1", flex: 0, gravity: "center" },
     ],
   };
 }
 
-const MENU_HERO = "https://donttalk.vercel.app/og-default.png";
-
 export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
+  const rows: LineMessage[] = [];
+  SERVICES.forEach((s, i) => {
+    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
+    rows.push(serviceRow(s));
+  });
+
   const bubbleContents: Record<string, unknown> = {
     type: "bubble",
-    hero: {
-      type: "image",
-      url: MENU_HERO,
-      size: "full",
-      aspectRatio: "40:21",
-      aspectMode: "cover",
-    },
     body: {
       type: "box",
       layout: "vertical",
-      spacing: "sm",
-      paddingAll: "16px",
+      paddingAll: "20px",
+      spacing: "none",
       contents: [
-        { type: "text", text: `嗨,我是 ${botName} 👋`, weight: "bold", size: "lg", color: "#0F172A", wrap: true },
-        {
-          type: "text",
-          text: "點下面服務,或直接打關鍵字(例如「股票」「風浪」)",
-          size: "xs",
-          color: "#64748B",
-          wrap: true,
-        },
-        { type: "separator", margin: "md", color: "#E2E8F0" },
-        {
-          type: "box",
-          layout: "vertical",
-          spacing: "sm",
-          margin: "md",
-          contents: SERVICES.map(serviceRow),
-        },
+        { type: "text", text: "MAIN MENU", size: "xs", weight: "bold", color: "#94A3B8" },
+        { type: "text", text: "您好，需要什麼協助？", size: "lg", weight: "bold", color: "#0F172A", margin: "md", wrap: true },
+        { type: "text", text: "請選擇下方服務，或直接輸入指令。", size: "sm", color: "#64748B", margin: "sm", wrap: true },
+        { type: "separator", margin: "lg", color: "#F1F5F9" },
+        { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows },
       ],
     },
   };
@@ -107,12 +66,14 @@ export function mainMenu(botName: string, websiteUrl?: string): LineMessage[] {
     bubbleContents.footer = {
       type: "box",
       layout: "vertical",
-      contents: [linkButton("看我的作品集網站", websiteUrl, "#4F46E5")],
+      paddingAll: "12px",
+      paddingTop: "0px",
+      contents: [subtleLink("前往作品集網站", websiteUrl)],
     };
   }
   const bubble: LineMessage = {
     type: "flex",
-    altText: `嗨,我是${botName},這是服務選單`,
+    altText: `${botName}・服務選單`,
     contents: bubbleContents,
     quickReply: textMessage("", MAIN_MENU_ITEMS).quickReply as Record<string, unknown>,
   };
