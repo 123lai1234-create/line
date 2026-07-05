@@ -2,3 +2,4 @@
 - [Testing auth-gated flows with secret passwords](testing-with-secret-credentials.md) — Playwright test subagents can't access env secrets; verify secret-gated login via curl instead.
 - [SVG/CJK rasterization](svg-cjk-rasterization.md) — resvg-js renders Chinese as tofu (only reads format-4 cmap); use @napi-rs/canvas for CJK image generation.
 - [Broadcast testing safety](broadcast-testing.md) — POST /api/broadcasts sends to real LINE friends instantly; only test rejections or future-scheduled rows, then delete them.
+- [LINE bot hosting & webhook wiring](line-bot-hosting.md) — published bot silent? repoint webhook to prod URL + use vm (not autoscale) for webhook+scheduler.
