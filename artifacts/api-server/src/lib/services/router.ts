@@ -1,6 +1,6 @@
 import { textMessage, type LineMessage, type QuickItem } from "./flex";
 import { weatherMenu } from "./weather";
-import { stockMenu, stockResult } from "./stock";
+import { stockMenu } from "./stock";
 import { musicMenu } from "./music";
 import { projectsMenu, projectResult } from "./projects";
 
@@ -15,7 +15,7 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
 export function mainMenu(botName: string): LineMessage[] {
   return [
     textMessage(
-      `嗨,我是${botName} 👋\n我可以幫你這些服務,點下面按鈕或直接打關鍵字都可以 👇\n\n🤿 潛水天氣 — 我的潛水平台\n📈 股票快報 — 即時股價與漲跌\n🎧 音樂欣賞 — 我的音樂平台\n🧬 專案介紹 — 我的作品集`,
+      `嗨,我是${botName} 👋\n我可以幫你這些服務,點下面按鈕或直接打關鍵字都可以 👇\n\n🤿 潛水天氣 — 我的潛水平台\n📈 股票快報 — 我的股票平台\n🎧 音樂欣賞 — 我的音樂平台\n🧬 專案介紹 — 我的作品集`,
       MAIN_MENU_ITEMS,
     ),
   ];
@@ -53,8 +53,7 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   }
 
   if (/股票|股價|報價|快報|台積|^[A-Za-z]{1,5}$|^\d{4,6}(\.\w+)?$/i.test(text)) {
-    const rest = text.replace(/股票快報|股票|股價|報價|快報/g, "").trim();
-    return rest ? stockResult(text) : stockMenu();
+    return stockMenu();
   }
 
   if (/音樂|歌|聽|music|song/i.test(text)) {
