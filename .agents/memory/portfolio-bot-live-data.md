@@ -5,17 +5,22 @@ description: Why the LINE bot fetches upstream public APIs directly instead of s
 
 # Live data for 股票 / 風浪 replies
 
-**Decision:** The bot fetches live stock and wave data from **upstream public APIs directly** (Open-Meteo marine+forecast for waves, Yahoo Finance chart API for TW stocks), NOT by scraping the owner's site `donttalk.vercel.app`.
+**風浪 (waves):** fetched from **Open-Meteo** marine+forecast directly (no key). The owner's /diving page just aggregates 中央氣象署 marine (station MID `46694A`, 龍洞) + Windguru, so the upstream source is equivalent and more robust.
 
-**Why:**
-- `donttalk.vercel.app` is a static shell (Astro, no `__NEXT_DATA__`) whose dynamic data comes from its own `/api/*` backend, which has been observed **down** ("後端服務維護中 — /api/* 請求會失敗"). Scraping it would break whenever their backend is down.
-- The site itself just aggregates the same public sources: the /diving page uses 中央氣象署 marine (station MID `46694A`, 龍洞) + Windguru; /stock is a 台股均線買賣訊號 tool. So going to the upstream sources is both more robust and equivalent.
+**股票 (stocks) — user-chosen HYBRID source:**
+- **個股 (individual stocks)** → the owner's OWN backend `GET https://donttalk.vercel.app/api/stock/<bareCode>` → `{code,name,candles:[{time,open,high,low,close}]}` (daily OHLC, ~250 candles). Derive quote (last vs prev close) AND trend (closes series) from the SAME candles. Code must be BARE (`2330`, not `2330.TW` → 404).
+- **大盤指數 (^TWII/TAIEX) + ETF** → still **Yahoo** chart API `query1.finance.yahoo.com/v8/finance/chart/<sym>` (needs `User-Agent`, no key).
+- Routing helper: `usesYahoo(sym,code)` = `sym.startsWith("^") || code==="TAIEX" || ETF_CODES.has(code)`.
 
-**How to apply:** If asked to add/adjust the bot's live data, prefer the upstream public API over the owner's site. Yahoo chart endpoint `query1.finance.yahoo.com/v8/finance/chart/<sym>` works for TW tickers (`2330.TW`, index `^TWII`) with a `User-Agent` header and needs no key. Open-Meteo needs no key.
+**Why:** the user explicitly said "抓我網站的不要抓yahoo", then (via choice) settled on hybrid — 個股 from their site, 大盤+ETF from Yahoo (their backend has no index/ETF). Earlier belief that the backend was permanently down was wrong; it is UP and its `/api/stock/<code>` serves general TW stocks (all 50 台灣50-style codes verified covered), not just its 109-item `/api/stocks` watchlist. `/api/stock_industry` returns `{groups:[{codes,label}]}` if industry grouping is ever needed.
 
-**Domain conventions baked into the code:**
-- Taiwan stock color convention: **紅=漲, 綠=跌** (opposite of US). Keep it.
-- 龍洞 faces east, so **offshore wind ≈ 西風** and is a drowning risk → forced NO-GO in the diving verdict. Don't downgrade it to a mere warning.
+**TWO NON-OBVIOUS HAZARDS with the owner's stock backend (both bit us):**
+1. **Silent wrong-stock fallback:** for a code it doesn't track, `/api/stock/<code>` returns **台積電(2330) data with HTTP 200** (NOT 404). GUARD: after fetch, require `String(json.code) === requestedCode`, else treat as 未收錄. Without this you display 台積電 prices under the wrong name.
+2. **Vercel edge cache cross-hits:** without a query param, different codes can return each other's cached payload. Always cache-bust: `?cb=${Date.now()}` + `Cache-Control: no-cache`.
+
+**Reachability rule (post-hybrid):** 個股 have **NO Yahoo fallback** — if the site guard/fetch fails, show a 資料不可用 card (honoring "個股只抓我的網站"). So arbitrary typed codes are only reachable if the owner's site tracks them; index/ETF always reachable via Yahoo.
+
+**Domain convention:** Taiwan stock color = **紅漲綠跌** (up `#DC2626`, down `#16A34A`, flat `#94A3B8`) — opposite of US, keep it. 龍洞 faces east so **offshore wind ≈ 西風** = drowning risk → forced NO-GO in the diving verdict (weather, unrelated to stocks); don't downgrade it to a mere warning.
 
 ## 音樂 / MV replies — the ONE exception (scrape the owner's page)
 

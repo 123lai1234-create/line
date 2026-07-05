@@ -143,7 +143,43 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
+// 資料來源策略(使用者選的混合模式):
+// - 個股 → 抓擁有者自己的網站 /api/stock/<code>
+// - 大盤指數(^TWII)與 ETF → 仍用 Yahoo 補
+const SITE_API = "https://donttalk.vercel.app";
+const ETF_CODES = new Set((SECTORS.find((s) => s.label === "熱門 ETF")?.items ?? []).map((s) => s.code));
+
+function usesYahoo(sym: string, code: string): boolean {
+  return sym.startsWith("^") || code === "TAIEX" || ETF_CODES.has(code);
+}
+
+interface Candle {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+// 從擁有者網站抓日K。守衛:回傳的 code 必須與請求相符 —— 該後端對未收錄的代號會
+// 直接回傳台積電(2330)的資料,若不比對就會顯示錯誤個股。code 需為純數字(去掉 .TW)。
+async function fetchSiteCandles(code: string): Promise<Candle[] | null> {
+  try {
+    // 帶 cache-bust:Vercel 邊緣快取在無 query 時會回傳共用/過期的錯誤資料
+    const url = `${SITE_API}/api/stock/${encodeURIComponent(code)}?cb=${Date.now()}`;
+    const res = await fetchWithTimeout(url, { headers: { "Cache-Control": "no-cache" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { code?: string; candles?: Candle[] };
+    if (String(data.code) !== code) return null; // 守衛:代號不符 = 站內未收錄
+    const candles = (data.candles ?? []).filter((c) => num(c?.close) !== null);
+    return candles.length >= 2 ? candles : null;
+  } catch {
+    return null;
+  }
+}
+
+// Yahoo 報價(大盤 / ETF,或站內查無時的後備)
+async function fetchYahooQuote(sym: string, name: string, code: string): Promise<Quote> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
     const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -164,6 +200,19 @@ async function fetchQuote(sym: string, name: string, code: string): Promise<Quot
   } catch {
     return { name, code, price: null, change: null, pct: null };
   }
+}
+
+// 統一報價:依來源策略路由。個股一律走網站(查無/失敗 → 顯示資料不可用,不改用 Yahoo);
+// 只有大盤指數與 ETF 走 Yahoo。
+async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
+  if (usesYahoo(sym, code)) return fetchYahooQuote(sym, name, code);
+  const candles = await fetchSiteCandles(code);
+  if (!candles) return { name, code, price: null, change: null, pct: null };
+  const price = num(candles[candles.length - 1].close);
+  const prev = num(candles[candles.length - 2].close);
+  if (price === null || prev === null || prev === 0) return { name, code, price, change: null, pct: null };
+  const change = price - prev;
+  return { name, code, price, change, pct: (change / prev) * 100 };
 }
 
 // 台股習慣:紅漲、綠跌
@@ -400,27 +449,28 @@ export function resolveStock(text: string): { sym: string; name: string; code: s
   return undefined;
 }
 
-async function fetchSeries(sym: string): Promise<{ closes: number[]; meta: Record<string, unknown> } | null> {
+// Yahoo 近一個月收盤序列(大盤 / ETF,或站內查無時的後備)
+async function fetchYahooCloses(sym: string): Promise<number[] | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1mo`;
     const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!res.ok) return null;
     const data = (await res.json()) as {
-      chart?: {
-        result?: {
-          meta?: Record<string, unknown>;
-          indicators?: { quote?: { close?: (number | null)[] }[] };
-        }[];
-      };
+      chart?: { result?: { indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
     };
-    const r = data.chart?.result?.[0];
-    if (!r?.meta) return null;
-    const raw = r.indicators?.quote?.[0]?.close ?? [];
+    const raw = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
     const closes = raw.filter((c): c is number => typeof c === "number" && Number.isFinite(c));
-    return { closes, meta: r.meta };
+    return closes.length >= 2 ? closes : null;
   } catch {
     return null;
   }
+}
+
+// 統一收盤序列:個股一律走網站日K(查無 → null,不改用 Yahoo);大盤/ETF 走 Yahoo。
+async function getCloses(sym: string, code: string): Promise<number[] | null> {
+  if (usesYahoo(sym, code)) return fetchYahooCloses(sym);
+  const candles = await fetchSiteCandles(code);
+  return candles ? candles.map((c) => c.close) : null;
 }
 
 function statCol(label: string, value: string, color = "#1E293B"): LineMessage {
@@ -468,10 +518,10 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
   const dispName = name ?? known?.name ?? sym;
   const dispCode = code ?? known?.code ?? sym.replace(/\.(TW|TWO)$/i, "");
 
-  const series = await fetchSeries(sym);
-  if (!series || series.closes.length < 2) return [trendUnavailable(dispName)];
+  const all = await getCloses(sym, dispCode);
+  if (!all || all.length < 2) return [trendUnavailable(dispName)];
 
-  const closes = series.closes.slice(-22); // 近一個月的交易日
+  const closes = all.slice(-22); // 近一個月的交易日
   const min = Math.min(...closes);
   const max = Math.max(...closes);
   const span = max - min || 1;
@@ -579,7 +629,7 @@ export async function stockMenu(): Promise<LineMessage[]> {
   const bubbles: LineMessage[] = [];
 
   // 第一頁:即時快報(大盤特寫 + 熱門股)
-  const page1: LineMessage[] = [marketHeader("Yahoo Finance ・ 即時")];
+  const page1: LineMessage[] = [marketHeader("即時報價 · 大盤 Yahoo,個股取自本人網站")];
   page1.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
   page1.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
   page1.push(sectionLabel("熱門股"));
