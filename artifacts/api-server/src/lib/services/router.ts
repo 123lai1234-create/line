@@ -122,8 +122,8 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
     return withMenu(await stockMenu());
   }
 
-  if (/音樂|歌|聽|music|song/i.test(text)) {
-    return musicMenu();
+  if (/音樂|歌|聽|music|song|mv|影片/i.test(text)) {
+    return withMenu(await musicMenu());
   }
 
   if (/專案|作品|project|介紹/i.test(text)) {
