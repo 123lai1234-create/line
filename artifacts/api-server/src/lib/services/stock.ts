@@ -1,6 +1,7 @@
 import {
   barChart,
   fetchWithTimeout,
+  kvRow,
   pickRow,
   quickReply,
   subtleLink,
@@ -173,6 +174,71 @@ async function fetchSiteCandles(code: string): Promise<Candle[] | null> {
     if (String(data.code) !== code) return null; // 守衛:代號不符 = 站內未收錄
     const candles = (data.candles ?? []).filter((c) => num(c?.close) !== null);
     return candles.length >= 2 ? candles : null;
+  } catch {
+    return null;
+  }
+}
+
+// 站內 /api/stock/<code> 的擴充資料(交易計畫、最新訊號、績效摘要)。
+// 一次 fetch 帶回全部欄位,個股卡片底部「交易策略」區塊用這份。
+interface TradePlan {
+  buy_price: number;
+  sl: number;
+  sl_source: string;
+  sl_candidates?: { name: string; price: number }[];
+  tp: number;
+  tp_source: string;
+  tp_candidates?: { name: string; price: number }[];
+  rr: number;
+}
+interface Marker {
+  time: string;
+  text: string;
+  color?: string;
+  position?: string;
+  shape?: string;
+}
+interface PerformanceSummary {
+  totalTrades: number;
+  winRate: number;
+  avgReturn: number;
+  profitLossRatio: number;
+  cumulativeReturn: number;
+  bestTrade: number;
+  worstTrade: number;
+  avgHoldDays: number;
+}
+interface SiteStockData {
+  name: string;
+  candles: Candle[];
+  tradePlan?: TradePlan;
+  markers?: Marker[];
+  performance?: { summary?: PerformanceSummary };
+}
+
+async function fetchSiteStockData(code: string): Promise<SiteStockData | null> {
+  try {
+    const url = `${SITE_API}/api/stock/${encodeURIComponent(code)}?cb=${Date.now()}`;
+    const res = await fetchWithTimeout(url, { headers: { "Cache-Control": "no-cache" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      code?: string;
+      name?: string;
+      candles?: Candle[];
+      tradePlan?: TradePlan;
+      markers?: Marker[];
+      performance?: { summary?: PerformanceSummary };
+    };
+    if (String(data.code) !== code) return null;
+    const candles = (data.candles ?? []).filter((c) => num(c?.close) !== null);
+    if (candles.length < 2) return null;
+    return {
+      name: data.name ?? code,
+      candles,
+      tradePlan: data.tradePlan,
+      markers: data.markers,
+      performance: data.performance,
+    };
   } catch {
     return null;
   }
@@ -518,10 +584,27 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
   const dispName = name ?? known?.name ?? sym;
   const dispCode = code ?? known?.code ?? sym.replace(/\.(TW|TWO)$/i, "");
 
-  const all = await getCloses(sym, dispCode);
-  if (!all || all.length < 2) return [trendUnavailable(dispName)];
+  // 個股 → 抓站內完整資料(順便拿到 tradePlan / markers / performance)
+  // 大盤 / ETF → 走 Yahoo,沒有交易計畫
+  let closes: number[] | null = null;
+  let siteData: SiteStockData | null = null;
+  if (!usesYahoo(sym, dispCode)) {
+    siteData = await fetchSiteStockData(dispCode);
+    closes = siteData?.candles.map((c) => c.close) ?? null;
+  } else {
+    closes = await fetchYahooCloses(sym);
+  }
+  if (!closes || closes.length < 2) return [trendUnavailable(dispName)];
 
-  const closes = all.slice(-22); // 近一個月的交易日
+  return [buildTrendCard(dispName, dispCode, closes.slice(-14), siteData)];
+}
+
+function buildTrendCard(
+  dispName: string,
+  dispCode: string,
+  closes: number[],
+  siteData: SiteStockData | null,
+): LineMessage {
   const min = Math.min(...closes);
   const max = Math.max(...closes);
   const span = max - min || 1;
@@ -541,6 +624,87 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
   const arrow = periodChange > 0 ? "▲" : periodChange < 0 ? "▼" : "－";
   const sign = periodChange > 0 ? "+" : "";
 
+  // 交易策略區塊(個股才有 — 大盤/ETF 走 Yahoo,沒 tradePlan)
+  // 內容:4 個核心數字 + 候選 1 個 + 最近 3 個 markers。
+  // 績效 / 策略型態放 web 頁(footer 有連結)看,LINE 卡片不堆太多東西,10KB 會炸。
+  const tradePlanSection: LineMessage[] = [];
+  const tp = siteData?.tradePlan;
+  const allMarkers = siteData?.markers ?? [];
+  if (tp) {
+    tradePlanSection.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+    tradePlanSection.push({
+      type: "box",
+      layout: "horizontal",
+      alignItems: "center",
+      margin: "md",
+      contents: [
+        { type: "text", text: "TRADE PLAN", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
+        { type: "filler" },
+        { type: "text", text: "交易計畫", size: "xxs", color: "#CBD5E1", align: "end" },
+      ],
+    });
+    tradePlanSection.push(kvRow("進場", String(tp.buy_price)));
+
+    // 停損 + 候選
+    const slCand = (tp.sl_candidates ?? [])[0];
+    tradePlanSection.push({
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      spacing: "xs",
+      contents: [
+        kvRow(`停損 (${tp.sl_source})`, String(tp.sl)),
+        ...(slCand
+          ? [{ type: "text", text: `候選 · ${slCand.name} ${slCand.price}`, size: "xxs", color: "#94A3B8", margin: "xs" } as LineMessage]
+          : []),
+      ],
+    });
+
+    // 停利 + 候選
+    const tpCand = (tp.tp_candidates ?? [])[0];
+    tradePlanSection.push({
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      spacing: "xs",
+      contents: [
+        kvRow(`停利 (${tp.tp_source})`, String(tp.tp)),
+        ...(tpCand
+          ? [{ type: "text", text: `候選 · ${tpCand.name} ${tpCand.price}`, size: "xxs", color: "#94A3B8", margin: "xs" } as LineMessage]
+          : []),
+      ],
+    });
+
+    tradePlanSection.push(kvRow("風險報酬比", String(tp.rr)));
+
+    // 最近 3 個 markers(最新在上)
+    if (allMarkers.length > 0) {
+      tradePlanSection.push({ type: "separator", margin: "md", color: "#F1F5F9" });
+      const recent = allMarkers.slice(-3).reverse();
+      tradePlanSection.push({
+        type: "text",
+        text: "最近訊號",
+        size: "xs",
+        color: "#94A3B8",
+        margin: "md",
+      });
+      for (const m of recent) {
+        const sigColor = m.color === "#ff1744" ? "#DC2626" : m.color === "#00e676" ? "#16A34A" : "#475569";
+        const isLatest = m === recent[0];
+        tradePlanSection.push({
+          type: "box",
+          layout: "horizontal",
+          margin: "xs",
+          alignItems: "center",
+          contents: [
+            { type: "text", text: m.text, size: "sm", weight: isLatest ? "bold" : "regular", color: sigColor, flex: 3 },
+            { type: "text", text: m.time, size: "xxs", color: "#94A3B8", align: "end", flex: 2 },
+          ],
+        });
+      }
+    }
+  }
+
   const card: LineMessage = {
     type: "flex",
     altText: `${dispName} 走勢`,
@@ -559,7 +723,7 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
             contents: [
               { type: "text", text: "PRICE TREND", size: "xs", weight: "bold", color: "#94A3B8", flex: 0 },
               { type: "filler" },
-              { type: "text", text: "近一個月", size: "xxs", color: "#CBD5E1", align: "end" },
+              { type: "text", text: "近兩週", size: "xxs", color: "#CBD5E1", align: "end" },
             ],
           },
           {
@@ -601,6 +765,7 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
               statCol("月低", fmtPrice(min), "#16A34A"),
             ],
           },
+          ...tradePlanSection,
           { type: "text", text: `更新 ${updatedNow()}`, size: "xxs", color: "#CBD5E1", margin: "lg" },
         ],
       },
@@ -614,7 +779,7 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
     },
     quickReply: quickReply(pickChips()),
   };
-  return [card];
+  return card;
 }
 
 export async function stockMenu(): Promise<LineMessage[]> {

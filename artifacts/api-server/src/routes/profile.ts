@@ -7,7 +7,7 @@ import { requireAuth } from "../lib/auth";
 const router: IRouter = Router();
 
 const DEFAULT_PROFILE = {
-  botName: "作品集小幫手",
+  botName: "不說的助理",
   introMessage: [
     "嗨,很高興認識你 👋 我是這個作品集的 AI 小幫手!",
     "",

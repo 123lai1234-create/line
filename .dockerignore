@@ -1,0 +1,45 @@
+# Replit-only files
+.replit
+.replitignore
+.replit-artifact/
+.agents/
+
+# Build output
+dist/
+tmp/
+*.tsbuildinfo
+
+# VCS / OS noise
+.git/
+.gitignore
+.gitattributes
+.DS_Store
+Thumbs.db
+
+# Editor configs
+.idea/
+.vscode/
+
+# Node
+node_modules/
+**/node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Tests / coverage (none right now but future-proof)
+coverage/
+.nyc_output/
+*.spec.ts
+*.test.ts
+
+# The monorepo siblings we don't need in build context
+artifacts/line-bot-admin/
+artifacts/mockup-sandbox/
+lib/api-spec/
+lib/api-client-react/
+lib/integrations/
+scripts/

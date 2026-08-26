@@ -45,5 +45,20 @@ Thumbs.db
 .github/instructions/nx.instructions.md
 
 # Replit
+.replit
+.replitignore
+.replit-artifact/
 .cache/
 .local/
+
+# Local agent / project memory (private, not for GitHub)
+.agents/
+
+# Local env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+!**/.env.example
+
+# Local uploads / scratch
+attached_assets/
