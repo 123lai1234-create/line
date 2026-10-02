@@ -267,17 +267,27 @@ async function fetchYahooQuote(sym: string, name: string, code: string): Promise
   }
 }
 
-// 統一報價:依來源策略路由。個股一律走網站(查無/失敗 → 顯示資料不可用,不改用 Yahoo);
-// 只有大盤指數與 ETF 走 Yahoo。
+// 統一報價:依來源策略路由。個股一律走網站(查無/失敗 → Yahoo 後備)。
+// 大盤指數與 ETF 直接走 Yahoo。
+//
+// 站內 backend (`/api/stock/<code>`) 仍在用 — 它給完整的日 K + 交易計畫 / 訊號 / 績效
+// (給 stockTrend 卡片用)。但 backend 在 2026-07 後離線,目前回 404,所以個股的價格查詢
+// 改 fallback 到 Yahoo,避免 STOCK LIST 整面空白 `—`。原本「不 fallback Yahoo」的設計是
+// 為防 backend 對未收錄代號 silent 退回台積電 — 那個守衛靠回傳 code 比對,現 backend 整條
+// 404 已無 silent fallback 風險,所以這個 fallback 是安全的。Yahoo 報價不含 tradePlan/
+// markers / performance,但 STOCK LIST bubble 只取 price + change + pct,夠用。
 async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
   if (usesYahoo(sym, code)) return fetchYahooQuote(sym, name, code);
   const candles = await fetchSiteCandles(code);
-  if (!candles) return { name, code, price: null, change: null, pct: null };
-  const price = num(candles[candles.length - 1].close);
-  const prev = num(candles[candles.length - 2].close);
-  if (price === null || prev === null || prev === 0) return { name, code, price, change: null, pct: null };
-  const change = price - prev;
-  return { name, code, price, change, pct: (change / prev) * 100 };
+  if (candles && candles.length >= 2) {
+    const price = num(candles[candles.length - 1].close);
+    const prev = num(candles[candles.length - 2].close);
+    if (price !== null && prev !== null && prev !== 0) {
+      const change = price - prev;
+      return { name, code, price, change, pct: (change / prev) * 100 };
+    }
+  }
+  return fetchYahooQuote(sym, name, code);
 }
 
 // 台股習慣:紅漲、綠跌
