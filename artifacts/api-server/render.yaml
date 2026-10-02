@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: line-bot-api
+    runtime: docker
+    rootDir: artifacts/api-server
+    plan: free
+    region: oregon
+    autoDeploy: true
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: PUBLIC_URL
+        fromService: { type: web, name: line-bot-api, property: hostUrl }
+
+# Render free tier spins down after 15 min idle. Cron Job pings our own
+# /api/healthz every 14 min so the service stays warm for LINE webhook.
+  - type: cron
+    name: line-bot-keepalive
+    runtime: docker
+    plan: free
+    schedule: "*/14 * * * *"
+    dockerfilePath: ./keepalive.Dockerfile
+    dockerContext: .
+    rootDir: artifacts/api-server
+    envVars:
+      - key: TARGET_URL
+        fromService: { type: web, name: line-bot-api, property: hostUrl }
