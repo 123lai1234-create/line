@@ -2,7 +2,6 @@ import {
   barChart,
   fetchWithTimeout,
   kvRow,
-  pickRow,
   quickReply,
   subtleLink,
   type LineMessage,
@@ -402,6 +401,51 @@ function quoteRows(items: Quote[]): LineMessage {
   return { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows };
 }
 
+// STOCK LIST 用的可點報價列:quoteRow 視覺 + pickRow postback 動作(整列點擊可看走勢)
+function directoryQuoteRow(q: Quote, sym: string, name: string): LineMessage {
+  const c = changeParts(q);
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    paddingTop: "10px",
+    paddingBottom: "10px",
+    action: { type: "postback", data: `s=stk&sym=${sym}`, displayText: `${name} 走勢`.slice(0, 300) },
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 4,
+        contents: [
+          { type: "text", text: q.name, size: "sm", weight: "bold", color: "#1E293B" },
+          { type: "text", text: q.code, size: "xxs", color: "#94A3B8" },
+        ],
+      },
+      {
+        type: "text",
+        text: fmtPrice(q.price),
+        size: "sm",
+        weight: "bold",
+        color: "#1E293B",
+        align: "end",
+        gravity: "center",
+        flex: 3,
+      },
+      { type: "box", layout: "vertical", flex: 3, justifyContent: "center", contents: [changeBlock(c)] },
+    ],
+  };
+}
+
+// 一組 STOCK LIST 列(用 directoryQuoteRow 渲染,可點 + 含報價)
+function directoryQuoteRows(items: Quote[], syms: string[], names: string[]): LineMessage {
+  const rows: LineMessage[] = [];
+  items.forEach((q, i) => {
+    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
+    rows.push(directoryQuoteRow(q, syms[i], names[i]));
+  });
+  return { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows };
+}
+
 // 卡片頂端的 MARKET UPDATE 標頭列
 function marketHeader(caption: string): LineMessage {
   return {
@@ -438,13 +482,11 @@ function stockBubble(contents: LineMessage[], updated: string): LineMessage {
   };
 }
 
-// 個股總覽頁:整區可點清單(點任一檔 → 送出 postback 看走勢),不即時抓價
-function directoryBubble(label: string, items: StockDef[]): LineMessage {
-  const rows: LineMessage[] = [];
-  items.forEach((s, i) => {
-    if (i > 0) rows.push({ type: "separator", color: "#F1F5F9" });
-    rows.push(pickRow(s.name, s.code, `s=stk&sym=${s.sym}`, `${s.name} 走勢`));
-  });
+// 個股總覽頁:整區可點清單(點任一檔 → 送出 postback 看走勢),含即時報價
+// 報價由呼叫端預先 fetchQuote 後傳入(避免每個 row 獨立 fetch 造成 bubble 渲染 race condition)
+function directoryBubble(label: string, items: StockDef[], quotes: Quote[]): LineMessage {
+  const syms = items.map((s) => s.sym);
+  const names = items.map((s) => s.name);
   return {
     type: "bubble",
     size: "mega",
@@ -465,7 +507,7 @@ function directoryBubble(label: string, items: StockDef[]): LineMessage {
           ],
         },
         { type: "separator", margin: "lg", color: "#F1F5F9" },
-        { type: "box", layout: "vertical", margin: "sm", spacing: "none", contents: rows },
+        directoryQuoteRows(quotes, syms, names),
         { type: "text", text: "點任一檔看即時走勢 · 或直接打代號查任何股票", size: "xxs", color: "#CBD5E1", margin: "lg", wrap: true },
       ],
     },
@@ -791,6 +833,20 @@ export async function stockMenu(): Promise<LineMessage[]> {
   const idx = quotes[0];
   const headlineQuotes = quotes.slice(1);
 
+  // 後續頁:台灣 50 + ETF — 先依 sector 分塊抓齊每塊的報價,再組 bubble
+  // 每塊 ≤13 items,等於 ≤13 個 parallel API call / sector chunk,不會爆 Vercel edge。
+  // 保留 (1/2)/(2/2) 的 chunk index 標籤供 directoryBubble 使用。
+  const sectorBubbles: { label: string; items: StockDef[]; quotes: Quote[] }[] = [];
+  for (const sec of SECTORS) {
+    const parts = chunk(sec.items, 13);
+    for (let i = 0; i < parts.length; i++) {
+      const items = parts[i];
+      const q = await Promise.all(items.map((s) => fetchQuote(s.sym, s.name, s.code)));
+      const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
+      sectorBubbles.push({ label, items, quotes: q });
+    }
+  }
+
   const bubbles: LineMessage[] = [];
 
   // 第一頁:即時快報(大盤特寫 + 熱門股)
@@ -801,13 +857,9 @@ export async function stockMenu(): Promise<LineMessage[]> {
   page1.push(quoteRows(headlineQuotes));
   bubbles.push(stockBubble(page1, updated));
 
-  // 後續頁:台灣 50 + ETF 個股總覽(依產業分類,整區可點)
-  for (const sec of SECTORS) {
-    const parts = chunk(sec.items, 13);
-    parts.forEach((items, i) => {
-      const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
-      bubbles.push(directoryBubble(label, items));
-    });
+  // 後續頁:依產業分類的個股總覽(含即時報價 + 點擊看走勢)
+  for (const sb of sectorBubbles) {
+    bubbles.push(directoryBubble(sb.label, sb.items, sb.quotes));
   }
 
   const card: LineMessage = {
