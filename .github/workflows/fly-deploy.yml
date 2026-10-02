@@ -1,0 +1,51 @@
+name: Fly.io Deploy — portfolio-line-bot
+
+# Auto-deploy api-server to Fly.io on push to main.
+# Required repo secret: FLY_API_TOKEN (https://fly.io/user/tokens)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/api-server/**"
+      - ".github/workflows/fly-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-deploy-portfolio-line-bot
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy api-server to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy \
+            --config artifacts/api-server/fly.toml \
+            --remote-only \
+            --strategy bluegreen \
+            --wait-timeout 600
+
+      - name: Healthz probe (post-deploy)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          sleep 15
+          flyctl checks list --app portfolio-line-bot -j || true
+          echo "---"
+          curl -fsS --max-time 15 https://portfolio-line-bot.fly.dev/api/healthz \
+            && echo " ✓ /api/healthz OK" \
+            || (echo " ✗ /api/healthz failed" && exit 1)
