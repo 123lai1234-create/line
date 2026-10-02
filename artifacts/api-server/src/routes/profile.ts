@@ -7,20 +7,16 @@ import { requireAuth } from "../lib/auth";
 const router: IRouter = Router();
 
 const DEFAULT_PROFILE = {
-  botName: "不說的助理",
+  // 簡潔化:從「不說的助理」→「不說」(小詠機器人風的 ip 化命名)
+  // 改為一行 self-id,搭配「指令清單」(info-first 風格)。
+  botName: "不說",
   introMessage: [
-    "嗨,很高興認識你 👋 我是這個作品集的 AI 小幫手!",
+    "嗨,我是「不說」 🤖 你的作品集 AI 小幫手。",
     "",
-    "我的主人是「電資工程 × 生物醫學」雙碩士,身兼工程師、生醫研究者與 AI 平台設計者,專長是把蛋白質語言模型、基因分析工具與互動介面,整合成真正能操作的跨域研究平台。",
+    "直接輸入就能開始:",
+    "· 潛水海況 · 股票走勢 · 音樂欣賞 · 蛋白質設計 · 專案介紹",
     "",
-    "幾個代表作品:",
-    "🧬 蛋白質 AI 設計系統 — ESM-2、ProteinMPNN、Bayesian Optimization、REINFORCE 端到端 Pipeline",
-    "🔬 基因 AI 分析平台 — RAG 文件搜尋、啟動子設計、CRISPR 導引排序、變異效應評估",
-    "📊 NGS 次世代定序工作站 — 從實驗設計到 QC 與功能分析",
-    "🧪 ProteinMPNN 互動工作台 — 序列設計、3D 結構預覽與突變著色",
-    "",
-    "2026 開放洽談研究合作、產品開發與平台整合的機會!",
-    "想看完整作品與互動展示,歡迎點下方連結 👇",
+    "想看完整作品與互動展示 👇",
   ].join("\n"),
   websiteUrl: "https://donttalk.vercel.app/",
 };
