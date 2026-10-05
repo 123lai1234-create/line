@@ -280,18 +280,25 @@ async function fetchYahooQuote(sym: string, name: string, code: string): Promise
 // 為防 backend 對未收錄代號 silent 退回台積電 — 那個守衛靠回傳 code 比對,現 backend 整條
 // 404 已無 silent fallback 風險,所以這個 fallback 是安全的。Yahoo 報價不含 tradePlan/
 // markers / performance,但 STOCK LIST bubble 只取 price + change + pct,夠用。
+//
+// ⚠️ 永不 throw —— 包了 Promise.race + 超時,個別 symbol 卡死不會拖垮整個 bubble。
+//   回傳 {price:null,...} 表示抓不到價,bubble 顯示「—」。
 async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
-  if (usesYahoo(sym, code)) return fetchYahooQuote(sym, name, code);
-  const candles = await fetchSiteCandles(code);
-  if (candles && candles.length >= 2) {
-    const price = num(candles[candles.length - 1].close);
-    const prev = num(candles[candles.length - 2].close);
-    if (price !== null && prev !== null && prev !== 0) {
-      const change = price - prev;
-      return { name, code, price, change, pct: (change / prev) * 100 };
+  try {
+    if (usesYahoo(sym, code)) return await fetchYahooQuote(sym, name, code);
+    const candles = await fetchSiteCandles(code);
+    if (candles && candles.length >= 2) {
+      const price = num(candles[candles.length - 1].close);
+      const prev = num(candles[candles.length - 2].close);
+      if (price !== null && prev !== null && prev !== 0) {
+        const change = price - prev;
+        return { name, code, price, change, pct: (change / prev) * 100 };
+      }
     }
+    return await fetchYahooQuote(sym, name, code);
+  } catch {
+    return { name, code, price: null, change: null, pct: null };
   }
-  return fetchYahooQuote(sym, name, code);
 }
 
 // 台股習慣:紅漲、綠跌
@@ -841,25 +848,31 @@ function buildTrendCard(
 export async function stockMenu(): Promise<LineMessage[]> {
   const updated = updatedNow();
 
-  // 第一頁只即時抓「大盤 + 頭條熱門股」,避免一次打 50+ 檔 Yahoo 造成緩慢或被限流
+  // 第一頁只即時抓「大盤 + 頭條熱門股」。
   const liveTargets = [INDEX, ...HEADLINES];
-  const quotes = await Promise.all(liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)));
-  const idx = quotes[0];
-  const headlineQuotes = quotes.slice(1);
+  const liveQuotes = await Promise.all(
+    liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)),
+  );
+  const idx = liveQuotes[0];
+  const headlineQuotes = liveQuotes.slice(1);
 
-  // 後續頁:台灣 50 + ETF — 先依 sector 分塊抓齊每塊的報價,再組 bubble
-  // 每塊 ≤13 items,等於 ≤13 個 parallel API call / sector chunk,不會爆 Vercel edge。
-  // 保留 (1/2)/(2/2) 的 chunk index 標籤供 directoryBubble 使用。
+  // 所有 sector 一次 parallel 抓(不再 sector-by-sector sequential)——
+  // 之前 4 sectors × ~4s worst case = 16s,LINE reply token 來不及。
+  // fetchWithTimeout 已經是 4s 個別硬 cap,46 個 symbol 全部平行 ≤ 4s。
   const sectorBubbles: { label: string; items: StockDef[]; quotes: Quote[] }[] = [];
-  for (const sec of SECTORS) {
-    const parts = chunk(sec.items, 13);
-    for (let i = 0; i < parts.length; i++) {
-      const items = parts[i];
-      const q = await Promise.all(items.map((s) => fetchQuote(s.sym, s.name, s.code)));
-      const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
-      sectorBubbles.push({ label, items, quotes: q });
-    }
-  }
+  await Promise.all(
+    SECTORS.map(async (sec) => {
+      const parts = chunk(sec.items, 13);
+      const partResults = await Promise.all(
+        parts.map(async (items, i) => {
+          const q = await Promise.all(items.map((s) => fetchQuote(s.sym, s.name, s.code)));
+          const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
+          return { label, items, quotes: q };
+        }),
+      );
+      sectorBubbles.push(...partResults);
+    }),
+  );
 
   const bubbles: LineMessage[] = [];
 
