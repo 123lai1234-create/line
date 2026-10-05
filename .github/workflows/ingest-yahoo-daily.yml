@@ -1,0 +1,60 @@
+name: Yahoo → market_price_bars Daily Ingest
+
+# 每日 06:30 UTC (14:30 Asia/Taipei) 拉一次 Yahoo 日 K,寫入 Neon market_price_bars。
+# stock-app 2026-07 被關後原本的 TWSE ingestion 也斷了,改成這條每日補資料。
+#
+# Secret:
+#   NEON_DATABASE_URL = Neon 連線字串(同 line-bot-api 的 DATABASE_URL)
+#
+# 手動跑:Actions → "Yahoo Daily Ingest" → Run workflow
+#   range=5d   增量(預設)
+#   range=2y   完整回填
+
+on:
+  schedule:
+    # 06:30 UTC = 14:30 Asia/Taipei(TWSE 13:30 收盤後 1 小時,給 Yahoo feed 緩衝)
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      range:
+        description: 'Yahoo range 參數'
+        required: true
+        default: '5d'
+        type: choice
+        options:
+          - '5d'
+          - '10d'
+          - '1mo'
+          - '3mo'
+          - '1y'
+          - '2y'
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Run ingest
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::NEON_DATABASE_URL secret not set"
+            exit 1
+          fi
+          args=""
+          if [ -n "${{ inputs.range }}" ]; then
+            args="--range=${{ inputs.range }}"
+          fi
+          node artifacts/api-server/scripts/ingest-yahoo.mjs $args
