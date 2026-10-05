@@ -2,10 +2,16 @@
 // Run from api-server root: `node scripts/migrate.mjs`
 // Reads DATABASE_URL from env. Idempotent: every CREATE uses IF NOT EXISTS.
 
-// Resolve `pg` from lib/db's node_modules (api-server doesn't depend on it directly).
+// Resolve `pg` via standard Node lookup, with lib/db fallback for monorepo dev.
+// (CI 跑 `npm install pg` 在 artifacts/api-server/ 也找得到。)
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const pg = require("../../../lib/db/node_modules/pg");
+let pg;
+try {
+  pg = require("../../../lib/db/node_modules/pg");
+} catch {
+  pg = require("pg");
+}
 
 const { Client } = pg;
 

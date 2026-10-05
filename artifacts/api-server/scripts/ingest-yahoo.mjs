@@ -18,10 +18,18 @@
 
 import { createRequire } from "node:module";
 
-// Resolve `pg` from lib/db's node_modules. Use createRequire so this works
-// both on local Windows (no node_modules in api-server/) and on CI Linux.
+// Resolve `pg` via standard Node lookup:
+//   • 本機開發: line/lib/db/node_modules/pg(因 lib/db 在 monorepo 共用 pg)
+//   • CI: 透過 workflow step `npm install pg` 放在 cwd(artifacts/api-server/),這裡直接 require
+//
+// 用 try/catch 兩邊都試,優先 lib/db 共用版(省 download),fallback 到本地 pg
 const require = createRequire(import.meta.url);
-const pg = require("../../../lib/db/node_modules/pg");
+let pg;
+try {
+  pg = require("../../../lib/db/node_modules/pg");
+} catch {
+  pg = require("pg");
+}
 
 const args = new Map(process.argv.slice(2).map((a) => [a.split("=")[0], a.split("=")[1] ?? true]));
 const RANGE = String(args.get("--range") ?? "2y");

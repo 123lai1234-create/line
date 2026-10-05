@@ -45,6 +45,10 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Install pg
+        # lib/db/node_modules/pg 是 gitignore,CI 跑這條 workflow 要另外裝 pg 給 script 用
+        run: npm install pg --no-save --silent
+
       - name: Run ingest
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
