@@ -1,35 +1,28 @@
-// In-memory log buffer by overriding process.stdout.write.
-// 不管 pino 內部怎麼建 logger / child / hook,所有寫到 stdout 的內容都會被 mirror。
-// 給 Render free plan 沒 logs API 環境 debug 用。
+// In-memory log buffer via pino hooks.logMethod.
+// 繞過 esbuild-plugin-pino worker thread(用 process.stdout.write override 抓不到)。
+// pino hooks 在 logger 方法被呼叫時觸發,在 worker 啟動之前,一定 capture 到。
 
 const MAX_LINES = 300;
 const buffer: string[] = [];
 
-let installed = false;
-
-export function installDebugLogCapture(): void {
-  if (installed) return;
-  installed = true;
-
-  const origWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
-    try {
-      const text =
-        typeof chunk === "string"
-          ? chunk
-          : Buffer.isBuffer(chunk)
-            ? chunk.toString("utf8")
-            : new TextDecoder().decode(chunk);
-      for (const line of text.split("\n")) {
-        if (!line) continue;
-        buffer.push(`${new Date().toISOString()} ${line}`);
-        if (buffer.length > MAX_LINES) buffer.shift();
-      }
-    } catch {
-      // ignore
-    }
-    return (origWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
-  }) as typeof process.stdout.write;
+export function captureLine(level: string, args: unknown[]): void {
+  try {
+    const text = args
+      .map((a) =>
+        typeof a === "string"
+          ? a
+          : a instanceof Error
+            ? `err=${a.message}`
+            : typeof a === "object" && a !== null
+              ? JSON.stringify(a)
+              : String(a),
+      )
+      .join(" ");
+    buffer.push(`${new Date().toISOString()} [${level}] ${text}`);
+    if (buffer.length > MAX_LINES) buffer.shift();
+  } catch {
+    // ignore
+  }
 }
 
 export function getRecentLogs(): string[] {
@@ -38,4 +31,24 @@ export function getRecentLogs(): string[] {
 
 export function clearLogs(): void {
   buffer.length = 0;
+}
+
+// pino.hooks — 在 logger.info/warn/error/debug 呼叫時觸發。
+// 不論 child logger 怎麼建、transports 怎麼走,hooks 都會被 invoke。
+// pino 多層 hooks 會 chain 起來,所以這層只 mirror + 呼叫 method 繼續往下。
+export function buildPinoHooks() {
+  return {
+    logMethod(this: unknown, inputArgs: unknown[], method: (...a: unknown[]) => void) {
+      // 從 this.bindings 拿 level (pino 把 level 放在 child logger 的 bindings)
+      const lvl =
+        (this as { level?: string }).level ??
+        (typeof inputArgs[0] === "object" && inputArgs[0] !== null
+          ? (inputArgs[0] as { level?: string }).level
+          : undefined) ??
+        "info";
+      captureLine(String(lvl), inputArgs);
+      // ⚠️ 不要 return — 舊版 pino 期待 method 同步呼叫才往下傳輸
+      method.apply(this, inputArgs as Parameters<typeof method>);
+    },
+  };
 }
