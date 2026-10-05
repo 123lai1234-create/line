@@ -874,26 +874,31 @@ export async function stockMenu(): Promise<LineMessage[]> {
     }),
   );
 
-  const bubbles: LineMessage[] = [];
-
   // 第一頁:即時快報(大盤特寫 + 熱門股)
-  const page1: LineMessage[] = [marketHeader("即時報價 · 大盤 Yahoo,個股取自本人網站")];
-  page1.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
-  page1.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
-  page1.push(sectionLabel("熱門股"));
-  page1.push(quoteRows(headlineQuotes));
-  bubbles.push(stockBubble(page1, updated));
+  const page1Contents: unknown[] = [marketHeader("即時報價 · 大盤 Yahoo,個股取自本人網站")];
+  page1Contents.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
+  page1Contents.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+  page1Contents.push(sectionLabel("熱門股"));
+  page1Contents.push(quoteRows(headlineQuotes));
+  const page1Bubble = stockBubble(page1Contents as LineMessage[], updated);
 
-  // 後續頁:依產業分類的個股總覽(含即時報價 + 點擊看走勢)
-  for (const sb of sectorBubbles) {
-    bubbles.push(directoryBubble(sb.label, sb.items, sb.quotes));
-  }
-
-  const card: LineMessage = {
-    type: "flex",
-    altText: "台股快報 · 台灣50",
-    contents: { type: "carousel", contents: bubbles },
-    quickReply: quickReply(pickChips()),
-  };
-  return [card];
+  // ⚠️ LINE flex message 上限 50KB,把整包塞一個 carousel 會炸。
+  // 改成「5 個獨立 flex message」,每個 message 是一個 bubble,LINE reply API 一次最多收 5 message。
+  // 這樣每個 message 各自 ≤ 50KB,總量也分散。
+  const messages: LineMessage[] = [
+    // Message 1:即時快報(market + headlines)
+    {
+      type: "flex",
+      altText: `台股快報 · 大盤+熱門股`,
+      contents: page1Bubble,
+      quickReply: quickReply(pickChips()),
+    },
+    // Message 2-5:每個 sector 一張(最多 4 sectors)
+    ...sectorBubbles.slice(0, 4).map((sb, i) => ({
+      type: "flex" as const,
+      altText: `${sb.label}${i === 0 ? " · 點擊看走勢" : ""}`,
+      contents: directoryBubble(sb.label, sb.items, sb.quotes),
+    })),
+  ];
+  return messages;
 }
