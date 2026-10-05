@@ -13,12 +13,23 @@ interface LineWebhookEvent {
 }
 
 async function handleWebhookEvents(req: Request): Promise<void> {
+  const log = req.log.child({ route: "line-webhook" });
   const events = Array.isArray((req.body as { events?: unknown[] })?.events)
     ? (req.body as { events: LineWebhookEvent[] }).events
     : [];
-  if (events.length === 0) return;
+  if (events.length === 0) {
+    log.warn("no events in payload");
+    return;
+  }
+  log.info({ count: events.length }, "processing webhook events");
 
-  const profile = await ensureProfile();
+  let profile;
+  try {
+    profile = await ensureProfile();
+  } catch (err) {
+    log.error({ err }, "ensureProfile failed");
+    return;
+  }
   const ctx = {
     botName: profile.botName,
     introMessage: profile.introMessage,
@@ -28,14 +39,24 @@ async function handleWebhookEvents(req: Request): Promise<void> {
   for (const event of events) {
     if (!event.replyToken) continue;
 
-    if (event.type === "follow") {
-      await replyMessages(event.replyToken, mainMenu(profile.botName, profile.websiteUrl));
-    } else if (event.type === "message" && event.message?.type === "text") {
-      const messages = await routeMessage(event.message.text ?? "", ctx);
-      await replyMessages(event.replyToken, messages);
-    } else if (event.type === "postback" && event.postback?.data) {
-      const messages = await routePostback(event.postback.data, ctx);
-      await replyMessages(event.replyToken, messages);
+    try {
+      if (event.type === "follow") {
+        await replyMessages(event.replyToken, mainMenu(profile.botName, profile.websiteUrl));
+      } else if (event.type === "message" && event.message?.type === "text") {
+        const text = event.message.text ?? "";
+        const t0 = Date.now();
+        log.info({ text, len: text.length }, "routing text");
+        const messages = await routeMessage(text, ctx);
+        log.info({ ms: Date.now() - t0, msgs: messages.length }, "routed, sending reply");
+        await replyMessages(event.replyToken, messages);
+        log.info("reply sent");
+      } else if (event.type === "postback" && event.postback?.data) {
+        const messages = await routePostback(event.postback.data, ctx);
+        await replyMessages(event.replyToken, messages);
+      }
+    } catch (err) {
+      // 一個 event 失敗不能影響其他 events
+      log.error({ err, type: event.type }, "event handler failed");
     }
   }
 }
