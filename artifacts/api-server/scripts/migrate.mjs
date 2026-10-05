@@ -3,7 +3,9 @@
 // Reads DATABASE_URL from env. Idempotent: every CREATE uses IF NOT EXISTS.
 
 // Resolve `pg` from lib/db's node_modules (api-server doesn't depend on it directly).
-import pg from "file:///D:/project/line/lib/db/node_modules/pg/lib/index.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const pg = require("../../../lib/db/node_modules/pg");
 
 const { Client } = pg;
 

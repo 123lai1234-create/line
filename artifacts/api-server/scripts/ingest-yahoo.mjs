@@ -16,7 +16,12 @@
 // 寫入以 UPSERT 為主,key = (source_name, symbol, contract_month, trade_date)。
 // 用 unnest() 一次 batch 一個 symbol(避免 per-row transaction)。
 
-import pg from "file:///D:/project/line/lib/db/node_modules/pg/lib/index.js";
+import { createRequire } from "node:module";
+
+// Resolve `pg` from lib/db's node_modules. Use createRequire so this works
+// both on local Windows (no node_modules in api-server/) and on CI Linux.
+const require = createRequire(import.meta.url);
+const pg = require("../../../lib/db/node_modules/pg");
 
 const args = new Map(process.argv.slice(2).map((a) => [a.split("=")[0], a.split("=")[1] ?? true]));
 const RANGE = String(args.get("--range") ?? "2y");
