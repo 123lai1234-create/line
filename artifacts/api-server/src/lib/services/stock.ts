@@ -146,7 +146,11 @@ function num(v: unknown): number | null {
 // 資料來源策略(使用者選的混合模式):
 // - 個股 → 抓擁有者自己的網站 /api/stock/<code>
 // - 大盤指數(^TWII)與 ETF → 仍用 Yahoo 補
-const SITE_API = "https://donttalk.vercel.app";
+//
+// SITE_API 預設 Render catchall (2026-10-05 起,Astro backend 從 Vercel Edge
+// 搬到獨立 Render service)。可用 SITE_API env 覆寫 — 例如本地開發指到
+// http://localhost:3000,Vercel 還活著的期間指 https://donttalk.vercel.app。
+const SITE_API = process.env.SITE_API || "https://donttalk-catchall.onrender.com";
 const ETF_CODES = new Set((SECTORS.find((s) => s.label === "熱門 ETF")?.items ?? []).map((s) => s.code));
 
 function usesYahoo(sym: string, code: string): boolean {
