@@ -301,6 +301,46 @@ async function fetchQuote(sym: string, name: string, code: string): Promise<Quot
   }
 }
 
+// Yahoo 日K → 統一成內部 Candle 形狀,方便與站內資料同型處理。
+async function fetchYahooCandles(sym: string): Promise<Candle[] | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1mo`;
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      chart?: {
+        result?: {
+          timestamp?: number[];
+          indicators?: { quote?: { open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[] }[] };
+        }[];
+      };
+    };
+    const result = data.chart?.result?.[0];
+    const ts = result?.timestamp ?? [];
+    const q = result?.indicators?.quote?.[0] ?? {};
+    const opens = q?.open ?? [];
+    const highs = q?.high ?? [];
+    const lows = q?.low ?? [];
+    const closes = q?.close ?? [];
+    const candles: Candle[] = [];
+    for (let i = 0; i < closes.length; i++) {
+      const c = closes[i];
+      if (typeof c !== "number" || !Number.isFinite(c)) continue;
+      const o = opens[i], h = highs[i], l = lows[i];
+      candles.push({
+        time: new Date((ts[i] ?? 0) * 1000).toISOString().slice(0, 10),
+        open: typeof o === "number" && Number.isFinite(o) ? o : c,
+        high: typeof h === "number" && Number.isFinite(h) ? h : c,
+        low: typeof l === "number" && Number.isFinite(l) ? l : c,
+        close: c,
+      });
+    }
+    return candles.length >= 2 ? candles : null;
+  } catch {
+    return null;
+  }
+}
+
 // 台股習慣:紅漲、綠跌
 type Dir = "up" | "down" | "flat";
 function dirOf(change: number | null): Dir {
@@ -598,7 +638,7 @@ async function fetchYahooCloses(sym: string): Promise<number[] | null> {
 // 統一收盤序列:個股一律走網站日K(查無 → null,不改用 Yahoo);大盤/ETF 走 Yahoo。
 async function getCloses(sym: string, code: string): Promise<number[] | null> {
   if (usesYahoo(sym, code)) return fetchYahooCloses(sym);
-  const candles = await fetchSiteCandles(code);
+  const candles = await fetchSiteCandles(code) ?? (await fetchYahooCandles(sym));
   return candles ? candles.map((c) => c.close) : null;
 }
 
@@ -648,15 +688,18 @@ export async function stockTrend(sym: string, name?: string, code?: string): Pro
   const dispCode = code ?? known?.code ?? sym.replace(/\.(TW|TWO)$/i, "");
 
   // 個股 → 抓站內完整資料(順便拿到 tradePlan / markers / performance)
-  // 大盤 / ETF → 走 Yahoo,沒有交易計畫
-  let closes: number[] | null = null;
+  // 站內離線 / 該檔未收錄 → fallback Yahoo 拿 OHLC,只缺擴充區塊,走勢圖照樣能顯示。
+  // 大盤 / ETF → 直接走 Yahoo(站內本來就沒這些)。
   let siteData: SiteStockData | null = null;
+  let candles: Candle[] | null = null;
   if (!usesYahoo(sym, dispCode)) {
     siteData = await fetchSiteStockData(dispCode);
-    closes = siteData?.candles.map((c) => c.close) ?? null;
+    candles = siteData?.candles ?? null;
+    if (!candles) candles = await fetchYahooCandles(sym);
   } else {
-    closes = await fetchYahooCloses(sym);
+    candles = await fetchYahooCandles(sym);
   }
+  const closes = candles?.map((c) => c.close) ?? null;
   if (!closes || closes.length < 2) return [trendUnavailable(dispName)];
 
   return [buildTrendCard(dispName, dispCode, closes.slice(-14), siteData)];
