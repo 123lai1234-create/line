@@ -26,8 +26,14 @@ LINE webhook 不會被冷啟動拖過 5s timeout）。
 | `DATABASE_URL` | Neon connection string（含 `?sslmode=require`） |
 | `LINE_CHANNEL_SECRET` | LINE Console → channel → Basic settings |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Console → Messaging API |
-| `ADMIN_PASSWORD` | 自己設 |
+| `ADMIN_PASSWORD` | 自己設（與 admin route `POST /api/admin/rich-menu` 共用） |
 | `SESSION_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+
+**GitHub Actions 自動 deploy（push 觸發）**
+- secrets: `FLY_API_TOKEN`（Fly.io deploy token）+ 可選 `ADMIN_PASSWORD`（自動重發 rich menu 用）
+- workflow 在 `.github/workflows/fly-deploy.yml`,trigger 是 push 到 main 且 paths 含 `artifacts/api-server/**`
+- push 觸發後自動:`deploy → healthz probe → refresh rich menu`(rich menu 步驟是 `if: ${{ secrets.ADMIN_PASSWORD != '' }}`,沒設就跳過,不會壞掉)
+- 加 `ADMIN_PASSWORD` 在 repo settings → Secrets → Actions 即可讓 push 自動重發 rich menu,不用再手動 curl
 
 ---
 

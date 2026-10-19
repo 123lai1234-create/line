@@ -49,3 +49,26 @@ jobs:
           curl -fsS --max-time 15 https://portfolio-line-bot.fly.dev/api/healthz \
             && echo " ✓ /api/healthz OK" \
             || (echo " ✗ /api/healthz failed" && exit 1)
+
+      # 部署成功後,自動重發 LINE rich menu,讓新圖 / 新 spec 立刻生效在 channel。
+      # 跳過條件:ADMIN_PASSWORD secret 沒設(避免 build 莫名壞)。secret 在
+      # GitHub logs 會自動 mask(`***`),只 `x-admin-token` header 傳,
+      # 不用 echo 印出來。
+      - name: Refresh LINE rich menu
+        if: ${{ secrets.ADMIN_PASSWORD != '' }}
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          RICH_MENU_HOST: portfolio-line-bot.fly.dev
+        run: |
+          echo "POST /api/admin/rich-menu?refresh=1 ..."
+          status=$(curl -sS -o /tmp/rich.json -w "%{http_code}" \
+            -X POST \
+            -H "x-admin-token: ${ADMIN_PASSWORD}" \
+            --max-time 30 \
+            "https://${RICH_MENU_HOST}/api/admin/rich-menu?refresh=1")
+          echo "HTTP ${status}"
+          cat /tmp/rich.json || true
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::warning::rich menu refresh failed (HTTP ${status}); deploy already succeeded"
+          fi
