@@ -1,1 +1,4 @@
-- [LINE multi-tab rich menu](line-rich-menu-tabs.md) — "多頁籤" = several rich menus + `richmenuswitch`/aliases; delete aliases before menus on re-publish; APPLY=1 is a live destructive change.
+- [LINE multi-tab rich menu](line-rich-menu-tabs.md) — 舊做法,每頁一個 rich menu + `richmenuswitch`/aliases;delete aliases before menus on re-publish;APPLY=1 is a live destructive change.
+- [LINE rich menu 1×3](line-rich-menu-1x3.md) — 現行做法。`POST /api/admin/rich-menu?refresh=1`(auth: `x-admin-token: $ADMIN_PASSWORD`)上傳 `data/rich-menu.jpg`(2500×1686 JPEG)~129KB,3 格 = 大盤快訊 postback / 個股查詢 message / 主選單 postback。
+- [LINE bot Fly.io hosting](line-bot-hosting-fly.md) — 部署主軸 Fly.io(sin region + `min_machines_running=1` 給 webhook),SOP 在 `artifacts/api-server/FLY_DEPLOY.md`。Railway fallback 見 `DEPLOY.md`。
+- [LINE bot follow event market update](line-bot-hosting-fly.md) — 加好友現回 bento + `stockUpdate()`(page-1 only,共 2 則 message 內,勿升 `stockMenu()` 5 則)。

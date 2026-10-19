@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { verifyLineSignature, replyMessages } from "../lib/line";
 import { routeMessage, routePostback, mainMenu } from "../lib/services/router";
+import { stockUpdate } from "../lib/services/stock";
 import { ensureProfile } from "./profile";
 
 const router: IRouter = Router();
@@ -41,7 +42,15 @@ async function handleWebhookEvents(req: Request): Promise<void> {
 
     try {
       if (event.type === "follow") {
-        await replyMessages(event.replyToken, mainMenu(profile.botName, profile.websiteUrl));
+        // 加好友 → 先 bento 主選單,再 append 一張「即時快報」market update。
+        // 共 2 則 message,符合 LINE Messaging API 5 則上限。
+        // 用 stockUpdate()(只發 page 1)而非 stockMenu()(會給 5 則 sector bubbles),
+        // 避免 reply token 1 分鐘上限被拖到極限。
+        const messages = [
+          ...mainMenu(profile.botName, profile.websiteUrl),
+          await stockUpdate(),
+        ];
+        await replyMessages(event.replyToken, messages);
       } else if (event.type === "message" && event.message?.type === "text") {
         const text = event.message.text ?? "";
         const t0 = Date.now();

@@ -108,7 +108,7 @@ LINE Developers Console → Channel → Messaging API → Webhook settings：
 ## 5. 還沒處理的東西
 
 - [ ] Admin panel `line-bot-admin`（Vite SPA）目前是給 Replit 預覽用的，**Railway 沒跑這個**。需要時可另開一個 Railway static-site service 把 `artifacts/line-bot-admin` build 後丟上去
-- [ ] Rich menu 圖片：之前 Replit 上若有綁定 alias，LINE 那邊不用動
+- [ ] Rich menu：**已內建** — 圖片 `artifacts/api-server/data/rich-menu.jpg`（2500×1686, 129KB）+ admin route `POST /api/admin/rich-menu`。詳見 [FLY_DEPLOY.md §7](./FLY_DEPLOY.md)（Railway 同樣適用）
 - [ ] 時區：`startBroadcastScheduler` 用 `process.env.TZ` 拿時區，沒設就是 UTC。建議設 `Asia/Taipei`
 
 ---
@@ -130,3 +130,15 @@ LINE Developers Console → Channel → Messaging API → Webhook settings：
 | 收到訊息但 log 沒出現 | Webhook URL 還指 Replit 沒改 |
 | 一直 crash | `PORT` env 沒設 / DB 連不上 / pnpm install 失敗 |
 | /api/healthz 200 但 webhook 401 | `LINE_CHANNEL_SECRET` 跟 LINE 後台對不上 |
+
+---
+
+## 8. 替代部署平台
+
+| 平台 | 優缺點 | 設定檔 | 詳細 |
+|---|---|---|---|
+| Railway | 跟目前 stock backend 同一平台, console 簡單 | `railway.json` | 本文檔（§1-§7） |
+| Fly.io | `sin` region 低 TW latency,`min_machines_running=1` 保 webhook warm | `fly.toml` | [FLY_DEPLOY.md](./FLY_DEPLOY.md) |
+| Render | free 15min idle 會 spin down（cron keepalive 仍可能 5s timeout）| `render.yaml` | — |
+
+**Webhook 必須 warm**（LINE 5 秒 timeout）— Render free 的冷啟動會吃光 deadline,不建議。Fly 跟 Railway 都常駐。兩份設定檔細節略有差異（healthcheck path、env var 數量、auto-stop 等），但跑起來行為一致。

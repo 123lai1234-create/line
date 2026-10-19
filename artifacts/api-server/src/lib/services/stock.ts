@@ -888,16 +888,34 @@ function buildTrendCard(
   return card;
 }
 
-export async function stockMenu(): Promise<LineMessage[]> {
-  const updated = updatedNow();
-
-  // 第一頁只即時抓「大盤 + 頭條熱門股」。
+// 一次抓「大盤 + 6 條頭條熱門股」即時報價 + 統一時間戳。
+// 7 個 symbol 平行 fetch,都在 fetchWithTimeout 4s 內完成,reply token 1 分鐘內必回。
+// 同時被 stockUpdate()(only page 1)和 stockMenu()(page 1 + sectors 共用)。
+async function fetchLiveQuotes(): Promise<{ idx: Quote; headlines: Quote[]; updated: string }> {
   const liveTargets = [INDEX, ...HEADLINES];
-  const liveQuotes = await Promise.all(
-    liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)),
-  );
-  const idx = liveQuotes[0];
-  const headlineQuotes = liveQuotes.slice(1);
+  const liveQuotes = await Promise.all(liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)));
+  return { idx: liveQuotes[0], headlines: liveQuotes.slice(1), updated: updatedNow() };
+}
+
+// 「即時快報」單張 flex message — 只取 page 1(market + 6 條熱門股)
+// 用於 follow 事件、hook append,避免跟 mainMenu 合塞超過 LINE 5-message 上限。
+export async function stockUpdate(): Promise<LineMessage> {
+  const { idx, headlines, updated } = await fetchLiveQuotes();
+  const page1Contents: unknown[] = [marketHeader("即時報價・大盤")];
+  page1Contents.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
+  page1Contents.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
+  page1Contents.push(sectionLabel("熱門股"));
+  page1Contents.push(quoteRows(headlines));
+  return {
+    type: "flex",
+    altText: "台股快報 · 大盤+熱門股",
+    contents: stockBubble(page1Contents as LineMessage[], updated),
+    quickReply: quickReply(pickChips()),
+  };
+}
+
+export async function stockMenu(): Promise<LineMessage[]> {
+  const { idx, headlines, updated } = await fetchLiveQuotes();
 
   // 所有 sector 一次 parallel 抓(不再 sector-by-sector sequential)——
   // 之前 4 sectors × ~4s worst case = 16s,LINE reply token 來不及。
@@ -917,8 +935,13 @@ export async function stockMenu(): Promise<LineMessage[]> {
     }),
   );
 
-  // 第一頁:即時快報(大盤特寫 + 熱門股)
-  const page1Contents: unknown[] = [marketHeader("即時報價 · 大盤 Yahoo,個股取自本人網站")];
+  return assembleStockMenu(updated, idx, headlines, sectorBubbles);
+}
+
+// 用 stockMenu() 取的 fetch 結果組裝完整 5-message carousel(首張 page 1 + 後 4 張 sector bubbles)。
+// 抽出來讓 stockUpdate() 與 stockMenu() 共用邏輯,並集中 page 1 的版面計算。
+function assembleStockMenu(updated: string, idx: Quote, headlineQuotes: Quote[], sectorBubbles: { label: string; items: StockDef[]; quotes: Quote[] }[]): LineMessage[] {
+  const page1Contents: unknown[] = [marketHeader("即時報價・大盤")];
   page1Contents.push({ type: "box", layout: "vertical", margin: "lg", contents: [indexFeature(idx)] });
   page1Contents.push({ type: "separator", margin: "lg", color: "#F1F5F9" });
   page1Contents.push(sectionLabel("熱門股"));

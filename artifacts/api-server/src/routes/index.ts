@@ -5,6 +5,7 @@ import profileRouter from "./profile";
 import broadcastsRouter from "./broadcasts";
 import statsRouter from "./stats";
 import lineWebhookRouter from "./line-webhook";
+import richMenuRouter from "./rich-menu";
 import debugRouter from "./debug";
 
 const router: IRouter = Router();
@@ -15,6 +16,7 @@ router.use(profileRouter);
 router.use(broadcastsRouter);
 router.use(statsRouter);
 router.use(lineWebhookRouter);
+router.use(richMenuRouter);
 router.use(debugRouter);
 
 export default router;
