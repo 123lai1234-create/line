@@ -1,9 +1,12 @@
 # Fly.io config for the LINE bot api-server.
 # Docs: https://fly.io/docs/reference/configuration/
 #
-# Deploy: `fly deploy --config artifacts/api-server/fly.toml`
-#   or via GitHub Actions workflow `.github/workflows/fly-deploy.yml`
-# (FLY_API_TOKEN secret required in repo settings).
+# Deploy: 首選 GitHub Actions(`.github/workflows/fly-deploy.yml`),
+#         觸發條件 push 到 main + paths 含 `artifacts/api-server/**`。
+#         step 包含 deploy + healthz probe + 自動重發 LINE rich menu
+#         (需要 ADMIN_PASSWORD secret,跳過條件 `secrets.ADMIN_PASSWORD == ''`)。
+# 手動:`fly deploy --config artifacts/api-server/fly.toml --remote-only`
+# secret:FLY_API_TOKEN(repo Settings → Secrets → Actions)
 
 app = "portfolio-line-bot"
 primary_region = "sin"   # Singapore — closest to TW for low LINE webhook latency
