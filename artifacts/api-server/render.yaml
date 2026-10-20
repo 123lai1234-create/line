@@ -19,12 +19,23 @@ services:
   - type: web
     name: line-bot-api
     runtime: docker
-    rootDir: artifacts/api-server
+    # ⚠️ rootDir 必須是 repo root(`.`),不能是 artifacts/api-server:
+    #    Render 只在 rootDir 內有檔案變動時才 trigger rebuild,
+    #    但這個 build 需要 lib/db/、lib/api-zod/、pnpm-lock.yaml(都在 root),
+    #    設成子目錄會漏掉那些變更 → 改了 db schema 卻不重新部署。
+    rootDir: .
     plan: free
     region: oregon
     autoDeploy: true
     branch: main
-    dockerfilePath: ./Dockerfile
+    # ⚠️ Render 的 dockerfilePath / dockerContext 都是「相對 repo root」,
+    #    不是相對 rootDir(這跟 fly.toml 不同 —— fly.toml 的相對路徑是
+    #    相對於 fly.toml 自己所在的目錄)。寫 ./Dockerfile 會抓到 repo root 那份
+    #    重複的 Dockerfile,雖然目前內容一模一樣所以不會壞,但兩份哪天 diverge
+    #    就會默默建錯。明確指定子目錄那份比較保險。
+    dockerfilePath: ./artifacts/api-server/Dockerfile
+    # build context 必須是 repo root:Dockerfile 裡 COPY pnpm-workspace.yaml /
+    # pnpm-lock.yaml / lib/db/ / lib/api-zod/ 都是 root 相對路徑。
     dockerContext: .
     healthCheckPath: /api/healthz
     # free plan 沒有 always-on 選項；靠外部 keepalive 避免冷啟動。
