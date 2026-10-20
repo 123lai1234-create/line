@@ -384,9 +384,13 @@ function quoteFromBars(name: string, code: string, bars: DbBar[] | undefined): Q
 
 // 批次版 fetchQuote 的 DB 路徑。
 // 回傳「查得到 DB 資料的 code → Quote」對應表;查不到的 code 不在 map 裡。
+//
+// TAIEX 也走這裡了 —— ingest-yahoo.mjs 的 EXTRA_TARGETS 現在會每天把
+// ^TWII 寫成 symbol="TAIEX"(2026-10-20 加的)。之前這裡把它 filter 掉是因為
+// DB 裡沒有,現在有了就不用特別排除:DB 沒資料時自然 miss → fallback Yahoo。
 async function dbQuotesFor(targets: StockDef[]): Promise<Map<string, Quote>> {
   const out = new Map<string, Quote>();
-  const codes = targets.map((t) => t.code).filter((c) => c !== "TAIEX");
+  const codes = targets.map((t) => t.code);
   if (codes.length === 0) return out;
 
   let barsByCode: Map<string, DbBar[]> | null = null;
