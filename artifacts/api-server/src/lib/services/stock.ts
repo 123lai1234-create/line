@@ -137,6 +137,10 @@ interface Quote {
   price: number | null;
   change: number | null;
   pct: number | null;
+  // 資料實際的交易日(YYYY-MM-DD)。DB 來源的報價會帶,讓卡片顯示
+  // 真實的資料日期而不是「現在」—— 否則盤中查詢會顯示今天的時間戳
+  // 但價格其實是昨天收盤。null = 不確定(走 Yahoo 即時)。
+  asOf?: string | null;
 }
 
 function num(v: unknown): number | null {
@@ -283,6 +287,145 @@ async function fetchYahooQuote(sym: string, name: string, code: string): Promise
 //
 // ⚠️ 永不 throw —— 包了 Promise.race + 超時,個別 symbol 卡死不會拖垮整個 bubble。
 //   回傳 {price:null,...} 表示抓不到價,bubble 顯示「—」。
+// ════════════════════════════════════════════════════════════════════════
+// Neon `market_price_bars` 快取層(最快路徑)
+// ────────────────────────────────────────────────────────────────────────
+// 為什麼要這層:
+//   `.github/workflows/ingest-yahoo-daily.yml` 每天 14:30(台北,收盤後一小時)
+//   已經把 Yahoo 日 K 寫進 Neon 的 market_price_bars。所以聊天時的報價根本
+//   不用再打 Yahoo —— 直接讀本機/Neon,大約 20~60ms,比打 Yahoo 的 2.3 秒快了
+//   兩個數量級。這對 LINE webhook 的 5 秒 timeout 有決定性差異,尤其在
+//   Render free 的冷啟動後第一個請求。
+//
+// 資料新鮮度:日 K,一天一筆。盤中查詢拿到的是「昨天收盤 + 昨天漲跌」。
+//   這對聊天機器人可接受(而且誠實 —— 我們把 trade_date 帶出來顯示)。
+//   想看盤中即時 → 走 Yahoo fallback。
+//
+// stale 判斷:DB 最新一筆比今天舊超過 STALE_DAYS 天就當作沒資料,fallback。
+//   週末/連假會自然 stale,所以給 5 天寬限(涵蓋最長的連假)。
+// ════════════════════════════════════════════════════════════════════════
+
+const DB_STALE_DAYS = 5;
+const DB_TIMEOUT_MS = 2500;
+
+interface DbBar {
+  trade_date: string;
+  close_price: number;
+}
+
+// 一次查多檔:用 = ANY($2) 而不是每檔一個 round-trip。
+// 7 檔 (TAIEX 除外,那個 DB 沒有) → 1 次 query 就全部回來。
+async function fetchDbQuotes(codes: string[]): Promise<Map<string, DbBar[]> | null> {
+  if (codes.length === 0) return new Map();
+
+  // 用 db pool 直接下 raw SQL(market_price_bars 不在 drizzle schema 裡 ——
+  // 那是 stock-app 時代留下的表,drizzle 只認 broadcasts / profile)。
+  // dynamic import + try/catch:DATABASE_URL 沒設時整個模組 import 會 throw,
+  // 不能讓「沒有 DB」變成「整個 bot 掛掉」,所以延後載入且失敗就 fallback。
+  let query: (text: string, params: unknown[]) => Promise<{ rows: unknown[] }>;
+  try {
+    const mod = (await import("@workspace/db")) as unknown as {
+      pool: { query: (text: string, params: unknown[]) => Promise<{ rows: unknown[] }> };
+    };
+    query = mod.pool.query.bind(mod.pool);
+  } catch {
+    return null; // 沒有 workspace/db、沒有 DATABASE_URL、或載入失敗 → 走 Yahoo
+  }
+
+  const cutoff = new Date(Date.now() - DB_STALE_DAYS * 86400_000)
+    .toISOString()
+    .slice(0, 10);
+
+  // 取每檔最近 2 根日 K(今天 + 昨天收盤),算 change / pct。
+  // DISTINCT ON 需要 ORDER BY 開頭是 symbol,所以外面包一層 subquery 再反轉。
+  const { rows } = await query(
+    `
+    SELECT symbol, trade_date, close_price FROM (
+      SELECT DISTINCT ON (symbol) symbol, trade_date, close_price
+      FROM market_price_bars
+      WHERE symbol = ANY($1)
+        AND contract_month = ''
+        AND trade_date >= $2
+        AND close_price IS NOT NULL
+      ORDER BY symbol, trade_date DESC
+    ) t
+    ORDER BY t.symbol, t.trade_date DESC
+    LIMIT $3
+    `,
+    [codes, cutoff, codes.length * 2],
+  );
+
+  const map = new Map<string, DbBar[]>();
+  for (const r of rows as { symbol: string; trade_date: string | Date; close_price: number }[]) {
+    const code = String(r.symbol);
+    const list = map.get(code) ?? [];
+    const d = r.trade_date;
+    list.push({
+      // Neon 的 date 欄位 pg 會回 Date 物件,不是字串
+      trade_date: typeof d === "string" ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10),
+      close_price: Number(r.close_price),
+    });
+    map.set(code, list);
+  }
+  return map;
+}
+
+// 把 DB 的 bars 轉成 Quote(需要 ≥2 根才算得出漲跌)。
+function quoteFromBars(name: string, code: string, bars: DbBar[] | undefined): Quote | null {
+  if (!bars || bars.length < 2) return null;
+  const latest = bars[0];       // trade_date DESC → [0] 是最新的
+  const prev = bars[1];
+  const price = latest.close_price;
+  const prevClose = prev.close_price;
+  if (!Number.isFinite(price) || !Number.isFinite(prevClose) || prevClose === 0) return null;
+  const change = price - prevClose;
+  return { name, code, price, change, pct: (change / prevClose) * 100, asOf: latest.trade_date };
+}
+
+// 批次版 fetchQuote 的 DB 路徑。
+// 回傳「查得到 DB 資料的 code → Quote」對應表;查不到的 code 不在 map 裡。
+async function dbQuotesFor(targets: StockDef[]): Promise<Map<string, Quote>> {
+  const out = new Map<string, Quote>();
+  const codes = targets.map((t) => t.code).filter((c) => c !== "TAIEX");
+  if (codes.length === 0) return out;
+
+  let barsByCode: Map<string, DbBar[]> | null = null;
+  try {
+    barsByCode = await withTimeout<Map<string, DbBar[]> | null>(fetchDbQuotes(codes), DB_TIMEOUT_MS);
+  } catch {
+    barsByCode = null;
+  }
+  if (!barsByCode) return out;
+
+  for (const t of targets) {
+    const q = quoteFromBars(t.name, t.code, barsByCode.get(t.code));
+    if (q) out.set(t.code, q);
+  }
+  return out;
+}
+
+// Promise.race timeout(不回應取消底層 fetch,但避免整個 bubble 被拖住)
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race<T | null>([
+    p,
+    new Promise<null>((r) => setTimeout(() => r(null), ms)),
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 報價來源策略
+// ────────────────────────────────────────────────────────────────────────
+//
+// ⚠️ 永不 throw —— 任何一層失敗都往下掉,最後回傳 {price:null,...} 讓卡片顯示「—」。
+//   個別 symbol 卡死不會拖垮整個 bubble。
+//
+// 舊順序(每次打網路,2.3~6 秒):
+//   站內 backend → Yahoo
+//
+// 新順序(命中 Neon 時 20~60ms):
+//   Neon market_price_bars(DB) → 站內 backend → Yahoo
+//
+// DB 層是 batch 的(一次 query 拿全部),不是 per-symbol,避免 7 次 round-trip。
 async function fetchQuote(sym: string, name: string, code: string): Promise<Quote> {
   try {
     if (usesYahoo(sym, code)) return await fetchYahooQuote(sym, name, code);
@@ -292,13 +435,26 @@ async function fetchQuote(sym: string, name: string, code: string): Promise<Quot
       const prev = num(candles[candles.length - 2].close);
       if (price !== null && prev !== null && prev !== 0) {
         const change = price - prev;
-        return { name, code, price, change, pct: (change / prev) * 100 };
+        return { name, code, price, change, pct: (change / prev) * 100, asOf: null };
       }
     }
     return await fetchYahooQuote(sym, name, code);
   } catch {
-    return { name, code, price: null, change: null, pct: null };
+    return { name, code, price: null, change: null, pct: null, asOf: null };
   }
+}
+
+// 批次報價:DB 一次撈全部,沒命中的才個別走 fetchQuote。
+// 這是 stockMenu / stockUpdate 共用的入口。
+async function fetchQuotesBatch(targets: StockDef[]): Promise<Quote[]> {
+  const fromDb = await dbQuotesFor(targets);
+  return Promise.all(
+    targets.map((t) => {
+      const hit = fromDb.get(t.code);
+      if (hit) return hit;
+      return fetchQuote(t.sym, t.name, t.code);
+    }),
+  );
 }
 
 // Yahoo 日K → 統一成內部 Candle 形狀,方便與站內資料同型處理。
@@ -522,6 +678,19 @@ function marketHeader(caption: string): LineMessage {
 }
 
 // 單一 bubble(白底 + 更新時間 + 網站連結 footer)
+// updatedStamp:偏好用報價帶回來的真實交易日(DB 來源);拿不到就用「現在」。
+//   DB 是日 K,所以盤中查詢時資料其實是上一個交易日的收盤 —— 顯示真實日期
+//   比顯示「今天 15:30」誠實。
+function updatedStamp(quotes: Quote[]): string {
+  const dates = quotes
+    .map((q) => q.asOf)
+    .filter((d): d is string => typeof d === "string" && d.length > 0);
+  if (dates.length === 0) return updatedNow();
+  // 取最新的那個日期(多數情況全部同一天)
+  const latest = dates.sort().at(-1) ?? dates[0];
+  return `${latest.slice(5)} 收盤`;
+}
+
 function stockBubble(contents: LineMessage[], updated: string): LineMessage {
   return {
     type: "bubble",
@@ -888,13 +1057,18 @@ function buildTrendCard(
   return card;
 }
 
-// 一次抓「大盤 + 6 條頭條熱門股」即時報價 + 統一時間戳。
-// 7 個 symbol 平行 fetch,都在 fetchWithTimeout 4s 內完成,reply token 1 分鐘內必回。
+// 一次抓「大盤 + 6 條頭條熱門股」報價 + 統一時間戳。
+// 先試 Neon 快取層(一次 query,~20-60ms),沒命中才各自打網路。
+// 命中 DB 時通常 <200ms;全落空(瞬間)才會碰到 Yahoo 的 2.3 秒。
 // 同時被 stockUpdate()(only page 1)和 stockMenu()(page 1 + sectors 共用)。
 async function fetchLiveQuotes(): Promise<{ idx: Quote; headlines: Quote[]; updated: string }> {
   const liveTargets = [INDEX, ...HEADLINES];
-  const liveQuotes = await Promise.all(liveTargets.map((s) => fetchQuote(s.sym, s.name, s.code)));
-  return { idx: liveQuotes[0], headlines: liveQuotes.slice(1), updated: updatedNow() };
+  const quotes = await fetchQuotesBatch(liveTargets);
+  return {
+    idx: quotes[0],
+    headlines: quotes.slice(1),
+    updated: updatedStamp(quotes),
+  };
 }
 
 // 「即時快報」單張 flex message — 只取 page 1(market + 6 條熱門股)
@@ -917,23 +1091,24 @@ export async function stockUpdate(): Promise<LineMessage> {
 export async function stockMenu(): Promise<LineMessage[]> {
   const { idx, headlines, updated } = await fetchLiveQuotes();
 
-  // 所有 sector 一次 parallel 抓(不再 sector-by-sector sequential)——
-  // 之前 4 sectors × ~4s worst case = 16s,LINE reply token 來不及。
-  // fetchWithTimeout 已經是 4s 個別硬 cap,46 個 symbol 全部平行 ≤ 4s。
+  // Sector 報價:先把全部 46 檔(含 ETF)一次餵給 DB 層做單一 query,
+  // 沒命中的才各自 fallback。命中 Neon 時這裡 ~60ms 解決(先前是 46 次打 Yahoo)。
+  const allItems = SECTORS.flatMap((s) => s.items);
+  const allQuotes = await fetchQuotesBatch(allItems);
+  const byCode = new Map(allQuotes.map((q) => [q.code, q]));
+
   const sectorBubbles: { label: string; items: StockDef[]; quotes: Quote[] }[] = [];
-  await Promise.all(
-    SECTORS.map(async (sec) => {
-      const parts = chunk(sec.items, 13);
-      const partResults = await Promise.all(
-        parts.map(async (items, i) => {
-          const q = await Promise.all(items.map((s) => fetchQuote(s.sym, s.name, s.code)));
-          const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
-          return { label, items, quotes: q };
-        }),
-      );
-      sectorBubbles.push(...partResults);
-    }),
-  );
+  for (const sec of SECTORS) {
+    const parts = chunk(sec.items, 13);
+    parts.forEach((items, i) => {
+      const label = parts.length > 1 ? `${sec.label} (${i + 1}/${parts.length})` : sec.label;
+      sectorBubbles.push({
+        label,
+        items,
+        quotes: items.map((it) => byCode.get(it.code) ?? { name: it.name, code: it.code, price: null, change: null, pct: null, asOf: null }),
+      });
+    });
+  }
 
   return assembleStockMenu(updated, idx, headlines, sectorBubbles);
 }
