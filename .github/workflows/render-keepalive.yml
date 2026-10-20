@@ -1,0 +1,70 @@
+name: Render keepalive — line-bot-api
+
+# Render free tier 15 分鐘沒 inbound traffic 就 spin down（冷啟動 ~50 秒，會炸掉
+# LINE 的 webhook timeout）。Render free plan 又沒有 cron job，所以 keepalive 放在
+# 這邊 —— GitHub Actions 的 `schedule` 觸發免費（public repo 免費、private repo
+# free 組織也有 2000 min/月），而且完全不吃 Render quota。
+#
+# 每 14 分鐘 ping 一次 /api/healthz → Render 永遠不會進 idle 倒數。
+#
+# 第一次設定：
+#   1. 在 repo settings → Secrets → Actions 加 `RENDER_APP_URL`
+#      值 = https://line-bot-api.onrender.com （Render 給的那個）
+#   2. 這個 workflow 會自動生效（Actions schedule 最長延遲 5 分鐘啟動）
+#
+# 手動測試：Actions → "Render keepalive — line-bot-api" → Run workflow
+
+on:
+  schedule:
+    # 每 14 分鐘（Render spin-down 是 15 分鐘，留 1 分鐘緩衝）
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Render app URL（留空則用 RENDER_APP_URL secret）'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    # 排程 workflow 如果一小時沒跑，GitHub 會自動停用（避免白燒 quota），
+    # 所以設宽松一點
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/healthz
+        env:
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          OVERRIDE_URL: ${{ inputs.app_url }}
+        run: |
+          url="${OVERRIDE_URL:-$RENDER_APP_URL}"
+          url="${url%/}"   # 去掉尾斜線
+
+          if [ -z "$url" ]; then
+            echo "::warning::RENDER_APP_URL secret 沒設,跳過（設定後就不會 Cold Start）"
+            exit 0
+          fi
+
+          echo "GET ${url}/api/healthz ..."
+          status=$(curl -sS -o /tmp/hz.json -w "%{http_code}" \
+            --max-time 30 \
+            "${url}/api/healthz" || echo "000")
+
+          echo "HTTP ${status}"
+          cat /tmp/hz.json 2>/dev/null || true
+          echo
+
+          case "$status" in
+            200)
+              echo " ✓ Render warm" ;;
+            *)
+              # keepalive 失敗不讓 workflow 紅燈（否則 Actions 一直發紅色通知很吵）
+              echo "::notice::Render 回 HTTP ${status}（可能是 spin-down 中或正在喚醒,下一次 ping 就會好）" ;;
+          esac

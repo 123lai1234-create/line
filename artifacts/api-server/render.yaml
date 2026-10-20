@@ -1,3 +1,20 @@
+# Render blueprint — LINE bot api-server
+#
+# ⚠️ 免費層限制（2026 現況，實測 + 官方文件）：
+#   • free web service: 512 MB RAM / <1 CPU / 750 instance hours per month
+#   • 15 分鐘沒 inbound traffic 就 spin down，再來第一個 request 要 ~50 秒冷啟動
+#   • ❌ free tier **沒有 cron job**、沒有 background worker
+#     （所以舊版放在這裡的 keepalive cron 在 free plan 會被 Render 拒絕建立）
+#   • signup 可能要求信用卡（Stripe $1 驗證，交易後自動退款）
+#
+# → keepalive 改由 GitHub Actions 負責：`.github/workflows/render-keepalive.yml`
+#   每 14 分鐘 ping 一次 /api/healthz，Render 就永遠不會進 15 分鐘 idle。
+#   那邊不需要 Render 帳號，也不佔 Render 的 quota。
+#
+# 部署：
+#   Render Dashboard → New → Blueprint → 指向 repo（會自動讀這個檔案）
+#   第一次建立時，5 個 `sync: false` 的變數會跳出來要你手填。
+
 services:
   - type: web
     name: line-bot-api
@@ -10,11 +27,16 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/healthz
+    # free plan 沒有 always-on 選項；靠外部 keepalive 避免冷啟動。
+    # 若冷啟動剛好發生，LINE 會自動 retry 同一個 webhook event，可接受。
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: TZ
+        value: Asia/Taipei
+      # Render 自動注入，不用手填
       - key: DATABASE_URL
         sync: false
       - key: LINE_CHANNEL_ACCESS_TOKEN
@@ -26,18 +48,4 @@ services:
       - key: SESSION_SECRET
         sync: false
       - key: PUBLIC_URL
-        fromService: { type: web, name: line-bot-api, property: hostUrl }
-
-# Render free tier spins down after 15 min idle. Cron Job pings our own
-# /api/healthz every 14 min so the service stays warm for LINE webhook.
-  - type: cron
-    name: line-bot-keepalive
-    runtime: docker
-    plan: free
-    schedule: "*/14 * * * *"
-    dockerfilePath: ./keepalive.Dockerfile
-    dockerContext: .
-    rootDir: artifacts/api-server
-    envVars:
-      - key: TARGET_URL
         fromService: { type: web, name: line-bot-api, property: hostUrl }
