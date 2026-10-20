@@ -48,6 +48,23 @@ await client.connect();
 
 console.log(`▶ ingest-yahoo | range=${RANGE} | dry=${DRY_RUN} | limit=${LIMIT === Infinity ? "∞" : LIMIT}`);
 
+// 額外標的（不在 DB 裡、但每天都要更新的）。
+//
+// 為什麼需要：universe query 是從 market_price_bars 反查「已經有資料的 symbol」，
+//   所以**新的 symbol 永遠進不了 queue** —— 除非有別的地方先塞一筆進去。
+//   TAIEX(^TWII)就是這種情況：大盤指數不是 TWSE/TPEX 個股，
+//   stock-app 關掉後從來沒被寫進這張表，所以每次都要現場打 Yahoo(~1.2s)。
+//
+// 加在這裡 → 每天的 workflow 會自動把它寫進 DB，之後 stock.ts 的
+//   fetchDbQuotes() 就能命中，market update 卡片整體延遲從 ~2.3s 降到 ~60ms。
+//
+// ⚠️ asset_type='index' / market='INDEX' 是新值。若該表有 CHECK 約束擋掉，
+//   這裡的 symbol 會被計入 failures —— 看 log 訊息改成合法的值即可。
+const EXTRA_TARGETS = [
+  // 加權指數。DB 用 'TAIEX' 當 symbol（跟 stock.ts 的 INDEX.code 一致）
+  { symbol: "TAIEX", asset_type: "index", market: "INDEX", yahoo: "^TWII" },
+];
+
 // 1. 撈現有 universe(DB 裡有出現過的 stock/etf 對)
 const universe = await client.query(`
   SELECT symbol, asset_type, market
@@ -59,23 +76,29 @@ const universe = await client.query(`
   ORDER BY symbol
 `);
 
-console.log(`▶ universe rows: ${universe.rows.length}`);
+console.log(`▶ universe rows: ${universe.rows.length} (+${EXTRA_TARGETS.length} extra)`);
 
 function yahooSymbol(symbol, market) {
   if (market === "TWSE") return `${symbol}.TW`;
   if (market === "TPEX") return `${symbol}.TWO`;
+  if (symbol === "TAIEX") return "^TWII";
   return null;
 }
 
-const target = universe.rows
+const fromDb = universe.rows
   .map((r) => ({
     symbol: r.symbol,
     market: r.market,
     asset_type: r.asset_type,
     yahoo: yahooSymbol(r.symbol, r.market),
   }))
-  .filter((r) => r.yahoo !== null)
-  .slice(0, LIMIT);
+  .filter((r) => r.yahoo !== null);
+
+// 合併 extra（已存在的 symbol 以 extra 為準，asset_type/market 才正確）
+const merged = new Map(fromDb.map((r) => [r.symbol, r]));
+for (const e of EXTRA_TARGETS) merged.set(e.symbol, e);
+
+const target = [...merged.values()].slice(0, LIMIT);
 
 console.log(`▶ target symbols: ${target.length}`);
 
