@@ -52,6 +52,12 @@ RUN groupadd --system --gid 1001 nodejs && \
 
 # Copy the bundled server (self-contained; workspace deps are inlined by esbuild).
 COPY --from=build --chown=app:nodejs /repo/artifacts/api-server/dist ./dist
+# ⚠️ data/ 一定要跟著進 runtime image。
+#    POST /api/admin/rich-menu 會讀 data/rich-menu.jpg 上傳到 LINE。
+#    esbuild 把整個 bundle 成單一 dist/index.mjs,所以執行期會從
+#    `/app/dist/../data/rich-menu.jpg` = `/app/data/rich-menu.jpg` 找。
+#    少了這行 → rich menu 上傳必定 ENOENT → 500。
+COPY --from=build --chown=app:nodejs /repo/artifacts/api-server/data ./data
 # Keep pino-pretty so the pino worker thread can spawn it at runtime.
 COPY --from=build --chown=app:nodejs /repo/artifacts/api-server/node_modules ./node_modules
 COPY --from=build --chown=app:nodejs /repo/node_modules ./node_modules

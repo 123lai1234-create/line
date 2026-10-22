@@ -20,7 +20,7 @@ import {
 //     router 內 `resolveStock` 認名稱/代號自動補 .TW 後送走勢圖。
 //   • 格 3 「主選單」→ postback `s=menu&style=bento`,重繪 bento 服務選單。
 //
-// 富選單圖片由 admin route 啟動時從 data/rich-menu.png 上傳(圖片先由 mcode-tools 生好放進去)。
+// 富選單圖片上傳時從 data/rich-menu.jpg 讀(2500×1686 JPEG,約 129KB)。
 // 也可以日後把這個 rich menu 拿掉換新版本時,POST /api/admin/rich-menu?refresh=1 會自動
 // 刪掉舊 rich menu 再重傳。
 const RICH_MENU_SPEC = {
@@ -46,18 +46,49 @@ const RICH_MENU_SPEC = {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const RICH_MENU_IMAGE_PATH = path.resolve(__dirname, "../../data/rich-menu.jpg");
+
+// 圖檔位置有兩種 layout,所以用候選清單試到中:
+//   • 打包後（Docker / Render / Fly）：esbuild 把整個 bundle 成單一 dist/index.mjs,
+//     __dirname = /app/dist → 圖檔在 /app/data/rich-menu.jpg
+//   • 本機 dev（tsx src/index.ts）：__dirname = artifacts/api-server/src/routes
+//     → 圖檔在 artifacts/api-server/data/rich-menu.jpg
+// ⚠️ 這裡不能用單一相對路徑 —— 只寫 `../../data` 的話,在 container 裡會解析成
+//    `/data/rich-menu.jpg`,檔案根本不存在,rich menu 上傳必定失敗。
+// 另外留 `RICH_MENU_IMAGE_PATH` env 給自訂路徑。
+const RICH_MENU_IMAGE_CANDIDATES = [
+  process.env.RICH_MENU_IMAGE_PATH,
+  path.resolve(__dirname, "../data/rich-menu.jpg"),
+  path.resolve(__dirname, "../../data/rich-menu.jpg"),
+].filter((p): p is string => Boolean(p));
+
+// LINE 的 rich menu content API 是用 request header 的 Content-Type 判斷格式,
+// 送錯(JPEG 卻標 png)LINE 會直接回 400,所以從 magic bytes  sniff。
+function sniffImageType(buf: Buffer): "image/png" | "image/jpeg" {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  return "image/png";
+}
+
+async function loadRichMenuImage(): Promise<{ buffer: Buffer; contentType: "image/png" | "image/jpeg" }> {
+  const tried: string[] = [];
+  for (const candidate of RICH_MENU_IMAGE_CANDIDATES) {
+    tried.push(candidate);
+    let buf: Buffer;
+    try {
+      buf = await readFile(candidate);
+    } catch {
+      continue; // 換下一個候選
+    }
+    // LINE rich menu image limit 1MB（2500×1686 控制在 ~129KB）
+    if (buf.length > 1024 * 1024) {
+      throw new Error(`rich menu image 太大 (${buf.length} bytes),需 ≤ 1MB: ${candidate}`);
+    }
+    return { buffer: buf, contentType: sniffImageType(buf) };
+  }
+  throw new Error(`rich menu image 找不到,試過: ${tried.join(" | ")}`);
+}
 
 const router: IRouter = Router();
-
-async function loadRichMenuImage(): Promise<Buffer> {
-  const buf = await readFile(RICH_MENU_IMAGE_PATH);
-  // LINE rich menu image limit 1MB,1×3 2500×1686 控制在 ~700KB 內(PNG)。
-  if (buf.length > 1024 * 1024) {
-    throw new Error(`rich-menu.png 太大 (${buf.length} bytes),需 ≤ 1MB`);
-  }
-  return buf;
-}
 
 // 極簡保護:要求 `x-admin-token` header 等於 `ADMIN_PASSWORD` env。
 // 部署之後只從本機 / CI / Fly console 用,無 cookie 必要。
@@ -104,9 +135,9 @@ router.post("/admin/rich-menu", requireAdminToken, async (req, res) => {
     const richMenuId = await createRichMenu(RICH_MENU_SPEC);
     log.info?.({ richMenuId }, "rich menu created");
 
-    const image = await loadRichMenuImage();
-    await uploadRichMenuImage(richMenuId, image, "image/png");
-    log.info?.({ richMenuId }, "rich menu image uploaded");
+    const { buffer, contentType } = await loadRichMenuImage();
+    await uploadRichMenuImage(richMenuId, buffer, contentType);
+    log.info?.({ richMenuId, bytes: buffer.length, contentType }, "rich menu image uploaded");
 
     await setDefaultRichMenu(richMenuId);
     log.info?.({ richMenuId }, "rich menu set as default");
