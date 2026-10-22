@@ -1,6 +1,6 @@
 name: Sync Render env — line-bot-api
 
-# 為什麼需要這條：Render 的 `POST /v1/services/{id}/env-vars` 只接受明文值，
+# 為什麼需要這條：Render 更新單一 env var 的 API 只接受明文值，
 # 但 DATABASE_URL 早就安全地放在 repo secret `NEON_DATABASE_URL` 裡了。
 # local shell 讀不到 GitHub secret（write-only），所以只能讓 runner 讀再轉送。
 #
@@ -79,20 +79,24 @@ jobs:
           echo "target host = ${host}"
           echo "target params = ${params:-<none>}"
 
-          payload=$(jq -n --arg v "$db_url" '[{key:"DATABASE_URL", value:$v}]')
+          payload=$(jq -n --arg v "$db_url" '{value:$v}')
 
+          # ⚠️ 必須用「單一 key」endpoint。
+          #    PUT /env-vars(整組) 是 **replace** 語意 —— 會把 NODE_ENV /
+          #    ADMIN_PASSWORD / SESSION_SECRET 全部洗掉,只剩 DATABASE_URL。
+          #    踩過一次(2026-10-22),要用 GET /env-vars/{key} 這種才安全。
           code=$(curl -sS -o /tmp/out.json -w "%{http_code}" \
             --max-time 60 \
             -X PUT \
-            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars/DATABASE_URL" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             -d "$payload")
 
           echo "HTTP ${code}"
-          # Render 回的 env-var 清單會帶值,這裡只報 key 名稱
-          jq -r '.[].key' /tmp/out.json 2>/dev/null || cat /tmp/out.json
+          # 回應會帶值,這裡只報 key 名稱
+          jq -r '.envVar.key' /tmp/out.json 2>/dev/null || echo "(no json body)"
 
           case "$code" in
             200) echo " ✓ DATABASE_URL 已同步,Render 會自動重新部署" ;;
