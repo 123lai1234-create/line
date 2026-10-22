@@ -1,0 +1,100 @@
+name: Sync Render env — line-bot-api
+
+# 為什麼需要這條：Render 的 `POST /v1/services/{id}/env-vars` 只接受明文值，
+# 但 DATABASE_URL 早就安全地放在 repo secret `NEON_DATABASE_URL` 裡了。
+# local shell 讀不到 GitHub secret（write-only），所以只能讓 runner 讀再轉送。
+#
+# 效果：把 `NEON_DATABASE_URL` → Render service 的 `DATABASE_URL`，不需要人手貼。
+#
+# 手動執行：Actions → "Sync Render env — line-bot-api" → Run workflow
+# 需要的 repo secrets：
+#   RENDER_API_KEY    (https://dashboard.render.com/u/settings?add-api-key)
+#   NEON_DATABASE_URL (已存在)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每天一次,把 Neon 的連線字串同步過去(順便讓「改了密碼就自動跟上」成立)
+    - cron: '37 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-render-env
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Copy NEON_DATABASE_URL into Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RENDER_API_KEY:-}" ]; then
+            echo "::warning::RENDER_API_KEY 沒設,跳過"
+            exit 0
+          fi
+          if [ -z "${NEON_DATABASE_URL:-}" ]; then
+            echo "::warning::NEON_DATABASE_URL 沒設,跳過"
+            exit 0
+          fi
+          if [ -z "${RENDER_SERVICE_ID:-}" ]; then
+            echo "::error::RENDER_SERVICE_ID repo variable 沒設"
+            exit 1
+          fi
+
+          # Neon 的 pooled endpoint 不能帶 channel_binding=require。
+          # pg(https://github.com/brianc/node-postgres) 根本沒有這個 libpq 參數,
+          # 帶著只會讓連線字串看起來對、實際行為不明 —— 直接剃掉。
+          db_url="${NEON_DATABASE_URL%%\?*}"
+          case "$NEON_DATABASE_URL" in
+            *\?*) query="${NEON_DATABASE_URL#*\?}" ;;
+            *)    query="" ;;
+          esac
+
+          kept=""
+          IFS='&' read -ra pairs <<< "$query"
+          for p in "${pairs[@]}"; do
+            [ -z "$p" ] && continue
+            case "$p" in
+              channel_binding=*) continue ;;   # 剃掉
+              sslmode=*)           ;;          # 保留(要存檔)
+              *)                   continue ;;  # 其他不確定參數也丟掉
+            esac
+            kept="${kept:+$kept&}$p"
+          done
+
+          if [ -n "$kept" ]; then db_url="${db_url}?${kept}"; fi
+
+          # 不印出完整連線字串(含密碼),只印 host 跟參數名
+          host="$(printf '%s' "$db_url" | sed -E 's#.*://[^@]*@##; s#[:/?].*##')"
+          params="$(printf '%s' "$db_url" | sed -E 's#.*\?##')"
+          echo "target host = ${host}"
+          echo "target params = ${params:-<none>}"
+
+          payload=$(jq -n --arg v "$db_url" '[{key:"DATABASE_URL", value:$v}]')
+
+          code=$(curl -sS -o /tmp/out.json -w "%{http_code}" \
+            --max-time 60 \
+            -X PUT \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d "$payload")
+
+          echo "HTTP ${code}"
+          # Render 回的 env-var 清單會帶值,這裡只報 key 名稱
+          jq -r '.[].key' /tmp/out.json 2>/dev/null || cat /tmp/out.json
+
+          case "$code" in
+            200) echo " ✓ DATABASE_URL 已同步,Render 會自動重新部署" ;;
+            *)   echo "::error::同步失敗"; exit 1 ;;
+          esac
