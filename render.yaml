@@ -1,5 +1,10 @@
 # Render blueprint — LINE bot api-server
 #
+# ⚠️ 這個檔案必須放在 **repo 根目錄**。
+#    Render 的 Blueprint 只會讀 repo root 的 render.yaml（不會去翻子目錄），
+#    所以這份是唯一會被 Render 實際吃到的副本。
+#    （舊版放在 artifacts/api-server/render.yaml，Render 根本找不到。）
+#
 # ⚠️ 免費層限制（2026 現況，實測 + 官方文件）：
 #   • free web service: 512 MB RAM / <1 CPU / 750 instance hours per month
 #   • 15 分鐘沒 inbound traffic 就 spin down，再來第一個 request 要 ~50 秒冷啟動
@@ -14,6 +19,11 @@
 # 部署：
 #   Render Dashboard → New → Blueprint → 指向 repo（會自動讀這個檔案）
 #   第一次建立時，5 個 `sync: false` 的變數會跳出來要你手填。
+#
+# 也可以完全走 REST API（repo 是 public，不需要接 GitHub App）：
+#   POST https://api.render.com/v1/services
+#   body: { type, name, ownerId, repo, branch, serviceDetails: { runtime, plan,
+#           region, healthCheckPath, envSpecificDetails: { dockerContext, dockerfilePath } } }
 
 services:
   - type: web
