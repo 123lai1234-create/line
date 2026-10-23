@@ -50,30 +50,14 @@ jobs:
             && echo " ✓ /api/healthz OK" \
             || (echo " ✗ /api/healthz failed" && exit 1)
 
-      # 部署成功後,自動重發 LINE rich menu,讓新圖 / 新 spec 立刻生效在 channel。
-      # 跳過邏輯在 step 內做(空 secret 用 `|| ''` 補,再判空跳過),不用 `if: ${{ secrets.X }}`
-      # 因為 GitHub Actions runner 不接受 step-level 直接比對 secret 表達式。
-      # secret 在 logs 自動 mask(`***`),只 `x-admin-token` header 傳,不會印出來。
-      # continue-on-error:rich menu 失敗不擋 deploy(已被 healthz 確認上線)。
-      - name: Refresh LINE rich menu
-        continue-on-error: true
-        env:
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || '' }}
-          RICH_MENU_HOST: portfolio-line-bot.fly.dev
-        run: |
-          if [ -z "$ADMIN_PASSWORD" ]; then
-            echo "::notice::ADMIN_PASSWORD secret not set; skipping rich menu refresh."
-            exit 0
-          fi
-          echo "POST /api/admin/rich-menu?refresh=1 ..."
-          status=$(curl -sS -o /tmp/rich.json -w "%{http_code}" \
-            -X POST \
-            -H "x-admin-token: ${ADMIN_PASSWORD}" \
-            --max-time 30 \
-            "https://${RICH_MENU_HOST}/api/admin/rich-menu?refresh=1")
-          echo "HTTP ${status}"
-          cat /tmp/rich.json || true
-          echo
-          if [ "$status" != "200" ]; then
-            echo "::warning::rich menu refresh failed (HTTP ${status}); deploy already succeeded"
-          fi
+      # ⚠️ 這一步已被**拿掉**(2026-10-23)。
+      #
+      # 原因:rich menu 已經改成 3 頁籤(richmenuswitch + alias),不再是單一 1×3。
+      # `/api/admin/rich-menu?refresh=1` 這個舊 route 會 `listRichMenus()` 全刪
+      # 再重建**一個** 1×3 — 跑下去會把 3 個頁籤整個滅掉。
+      #
+      # 多頁籤要用 `scripts/src/setup-line-richmenu.ts` 發布(它才會建 alias),
+      # 而且是**手動**跑、需要人看過圖再決定:
+      #     cd scripts
+      #     LINE_CHANNEL_ACCESS_TOKEN=... pnpm run setup-line-richmenu        # 只出圖
+      #     APPLY=1 LINE_CHANNEL_ACCESS_TOKEN=... pnpm run setup-line-richmenu # 真的上線

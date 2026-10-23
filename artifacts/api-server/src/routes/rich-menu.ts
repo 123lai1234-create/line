@@ -119,6 +119,17 @@ router.post("/admin/rich-menu", requireAdminToken, async (req, res) => {
 
   if (refresh) {
     const existing = await listRichMenus();
+    // ⚠️ 防呆：多頁籤模式下 channel 上會同時有 3 個 rich menu(+3 個 alias)。
+    //    這個 route 只會建立**一個** 1×3,refresh 下去會把頁籤整個滅掉而且救不回來。
+    //    多頁籤請走 scripts/src/setup-line-richmenu.ts(它才會建 alias)。
+    if (existing.length > 1) {
+      res.status(409).json({
+        error: "channel 上有多個 rich menu — 看起來是多頁籤模式,這個單頁 route 不要用",
+        count: existing.length,
+        hint: "用 scripts/src/setup-line-richmenu.ts 發布(需手動確認)",
+      });
+      return;
+    }
     for (const m of existing) {
       if (m.richMenuId) {
         try {

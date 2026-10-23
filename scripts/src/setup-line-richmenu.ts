@@ -10,10 +10,10 @@ const FONT_FAMILY = "huninn";
 
 const W = 2500;
 const H = 1686;
-const TAB_H = 250;
+const TAB_H = 264;
 const G = 60;
 const COL_W = (W - G * 3) / 2; // 1160
-const ROW_H = (H - TAB_H - G * 3) / 2; // 628
+const ROW_H = (H - TAB_H - G * 3) / 2; // 621
 
 const CANVAS_BG = "#F8FAFC";
 const CARD_BG = "#FFFFFF";
@@ -86,6 +86,27 @@ const waveIcon: IconFn = (ctx, cx, cy, color) => {
     }
     stroke(ctx, 11, color);
   }
+};
+
+// 「回到首頁 / 全部功能」用的房子 icon
+const homeIcon: IconFn = (ctx, cx, cy, color) => {
+  ctx.beginPath();
+  ctx.moveTo(cx - 84, cy - 6);
+  ctx.lineTo(cx, cy - 80);
+  ctx.lineTo(cx + 84, cy - 6);
+  stroke(ctx, 11, color);
+  ctx.beginPath();
+  ctx.moveTo(cx - 58, cy - 22);
+  ctx.lineTo(cx - 58, cy + 68);
+  ctx.lineTo(cx + 58, cy + 68);
+  ctx.lineTo(cx + 58, cy - 22);
+  stroke(ctx, 11, color);
+  ctx.beginPath();
+  ctx.moveTo(cx - 20, cy + 68);
+  ctx.lineTo(cx - 20, cy + 16);
+  ctx.lineTo(cx + 20, cy + 16);
+  ctx.lineTo(cx + 20, cy + 68);
+  stroke(ctx, 11, color);
 };
 
 const chartIcon: IconFn = (ctx, cx, cy, color) => {
@@ -207,83 +228,144 @@ const globeIcon: IconFn = (ctx, cx, cy, color) => {
 // ── tabs & tiles ───────────────────────────────────────────────────
 const TABS: Tab[] = [
   {
-    key: "tools",
-    label: "即時工具",
+    key: "news",
+    label: "即時資訊",
     accent: "#0EA5E9",
-    alias: "portfolio-tools",
+    alias: "bot-news",
     tiles: [
       { title: "潛水海況", subtitle: "6 大潛點 · 未來 5 天浪高風速", accent: "#0EA5E9", tint: "#E0F2FE", icon: waveIcon, action: { type: "message", text: "潛水海況" } },
-      { title: "股票走勢", subtitle: "台股即時報價 · 走勢圖", accent: "#DC2626", tint: "#FEE2E2", icon: chartIcon, action: { type: "message", text: "股票走勢" } },
-      { title: "蛋白質設計", subtitle: "AI 流程導覽 + 序列分析", accent: "#059669", tint: "#D1FAE5", icon: dnaIcon, action: { type: "message", text: "蛋白質設計" } },
-      { title: "完整選單", subtitle: "展開全部功能與細節", accent: "#0F172A", tint: "#E2E8F0", icon: gridIcon, action: { type: "message", text: "選單" } },
+      { title: "台股快訊", subtitle: "大盤 + 熱門股即時報價", accent: "#DC2626", tint: "#FEE2E2", icon: chartIcon, action: { type: "postback", data: "s=stk", displayText: "看台股快訊" } },
+      { title: "個股查詢", subtitle: "輸入名稱或代號看走勢圖", accent: "#7C3AED", tint: "#EDE9FE", icon: gridIcon, action: { type: "message", text: "個股查詢" } },
+      { title: "音樂欣賞", subtitle: "創作 MV 精選輪播", accent: "#DB2777", tint: "#FCE7F3", icon: musicIcon, action: { type: "message", text: "音樂欣賞" } },
     ],
   },
   {
-    key: "creations",
-    label: "創作作品",
+    key: "projects",
+    label: "AI 專案",
     accent: "#7C3AED",
-    alias: "portfolio-creations",
+    alias: "bot-projects",
     tiles: [
-      { title: "音樂欣賞", subtitle: "創作 MV 精選輪播", accent: "#7C3AED", tint: "#EDE9FE", icon: musicIcon, action: { type: "message", text: "音樂欣賞" } },
-      { title: "專案介紹", subtitle: "生醫 AI・量化研究作品", accent: "#D97706", tint: "#FEF3C7", icon: projectIcon, action: { type: "message", text: "專案介紹" } },
-      { title: "關於我", subtitle: "創作者介紹", accent: "#0EA5E9", tint: "#E0F2FE", icon: personIcon, action: { type: "message", text: "關於我" } },
-      { title: "個人網站", subtitle: "donttalk.vercel.app", accent: "#0F172A", tint: "#E2E8F0", icon: globeIcon, action: { type: "uri", uri: WEBSITE_URL } },
+      { title: "蛋白質設計", subtitle: "AI 流程導覽 + 序列分析", accent: "#059669", tint: "#D1FAE5", icon: dnaIcon, action: { type: "message", text: "蛋白質設計" } },
+      { title: "專案介紹", subtitle: "生醫 AI · 量化研究作品", accent: "#D97706", tint: "#FEF3C7", icon: projectIcon, action: { type: "message", text: "專案介紹" } },
+      { title: "完整選單", subtitle: "展開全部功能與細節", accent: "#0F172A", tint: "#E2E8F0", icon: gridIcon, action: { type: "message", text: "選單" } },
+      { title: "個人網站", subtitle: "donttalk.vercel.app", accent: "#2563EB", tint: "#DBEAFE", icon: globeIcon, action: { type: "uri", uri: WEBSITE_URL } },
+    ],
+  },
+  {
+    key: "about",
+    label: "關於不說",
+    accent: "#D97706",
+    alias: "bot-about",
+    tiles: [
+      { title: "關於我", subtitle: "創作者介紹與理念", accent: "#D97706", tint: "#FEF3C7", icon: personIcon, action: { type: "message", text: "關於我" } },
+      { title: "服務總覽", subtitle: "一次看完所有功能", accent: "#0EA5E9", tint: "#E0F2FE", icon: gridIcon, action: { type: "postback", data: "s=menu&style=bento", displayText: "打開服務選單" } },
+      { title: "回到首頁", subtitle: "切回第 1 頁即時資訊", accent: "#0F172A", tint: "#E2E8F0", icon: homeIcon, action: { type: "richmenuswitch", richMenuAliasId: "bot-news", data: "switch=news" } },
+      { title: "官方網站", subtitle: "完整作品集都在這", accent: "#2563EB", tint: "#DBEAFE", icon: globeIcon, action: { type: "uri", uri: WEBSITE_URL } },
     ],
   },
 ];
 
+// 卡片從畫面最上方開始排；tab bar 固定在**底部**(thumb reach,也跟截圖一致)
 const CELL_XY: [number, number][] = [
-  [G, TAB_H + G],
-  [G + COL_W + G, TAB_H + G],
-  [G, TAB_H + G + ROW_H + G],
-  [G + COL_W + G, TAB_H + G + ROW_H + G],
+  [G, G],
+  [G + COL_W + G, G],
+  [G, G + ROW_H + G],
+  [G + COL_W + G, G + ROW_H + G],
 ];
 
 // ── rendering ──────────────────────────────────────────────────────
+// hex → rgba(r,g,b,a),漸層背景要帶透明度
+function withAlpha(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** 底部 tab bar:3 格,選中格是 accent 膠囊 + 頁碼指示(1/3)。 */
 function renderTabBar(ctx: SKRSContext2D, activeIndex: number): void {
+  const top = H - TAB_H;
+
+  // bar 本體 + 上緣陰影,讓它有「浮在內容上」的感覺
+  ctx.save();
+  ctx.shadowColor = "rgba(15, 23, 42, 0.10)";
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = -10;
   ctx.fillStyle = CARD_BG;
-  ctx.fillRect(0, 0, W, TAB_H);
+  ctx.fillRect(0, top, W, TAB_H);
+  ctx.restore();
+
   ctx.strokeStyle = HAIRLINE;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, TAB_H - 1);
-  ctx.lineTo(W, TAB_H - 1);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(W / 2, 44);
-  ctx.lineTo(W / 2, TAB_H - 44);
+  ctx.moveTo(0, top + 1);
+  ctx.lineTo(W, top + 1);
   ctx.stroke();
 
+  const segW = W / TABS.length;
+
+  // 分隔線只在非選中區之間畫,選中區被膠囊蓋住
+  ctx.strokeStyle = HAIRLINE;
+  ctx.lineWidth = 2;
+  for (let i = 1; i < TABS.length; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * segW, top + 52);
+    ctx.lineTo(i * segW, top + TAB_H - 52);
+    ctx.stroke();
+  }
+
   TABS.forEach((tab, i) => {
-    const cx = i * (W / 2) + W / 4;
+    const cx = i * segW + segW / 2;
     const on = i === activeIndex;
+
+    if (on) {
+      const pw = segW - 120;
+      rrPath(ctx, cx - pw / 2, top + 30, pw, TAB_H - 100, 44);
+      ctx.fillStyle = withAlpha(tab.accent, 0.12);
+      ctx.fill();
+    }
+
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold 76px ${FONT_FAMILY}`;
+    ctx.font = `bold 74px ${FONT_FAMILY}`;
     ctx.fillStyle = on ? INK : MUTED;
-    ctx.fillText(tab.label, cx, TAB_H / 2 - 6);
+    ctx.fillText(tab.label, cx, top + TAB_H / 2 - 34);
+
+    // 頁碼指示:選中頁才顯示,讓人知道還有幾頁
     if (on) {
-      const uw = 200;
-      rrPath(ctx, cx - uw / 2, TAB_H - 26, uw, 10, 5);
+      ctx.font = `bold 34px ${FONT_FAMILY}`;
       ctx.fillStyle = tab.accent;
-      ctx.fill();
+      ctx.fillText(`${i + 1}/${TABS.length}`, cx, top + TAB_H / 2 + 44);
     }
   });
 }
 
 function renderCard(ctx: SKRSContext2D, px: number, py: number, t: Tile): void {
-  rrPath(ctx, px, py, COL_W, ROW_H, 28);
+  // 陰影
+  ctx.save();
+  ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+  ctx.shadowBlur = 44;
+  ctx.shadowOffsetY = 12;
+  rrPath(ctx, px, py, COL_W, ROW_H, 36);
   ctx.fillStyle = CARD_BG;
   ctx.fill();
-  rrPath(ctx, px, py, COL_W, ROW_H, 28);
+  ctx.restore();
+
+  rrPath(ctx, px, py, COL_W, ROW_H, 36);
   ctx.strokeStyle = HAIRLINE;
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  const chip = 150;
-  const chipX = px + 70;
-  const chipY = py + 70;
-  rrPath(ctx, chipX, chipY, chip, chip, 32);
+  // 頂端一條 accent 細線,當成卡片的主色識別
+  rrPath(ctx, px + 36, py, COL_W - 72, 10, 5);
+  ctx.fillStyle = t.accent;
+  ctx.fill();
+
+  const chip = 168;
+  const chipX = px + 74;
+  const chipY = py + 76;
+  rrPath(ctx, chipX, chipY, chip, chip, 40);
   ctx.fillStyle = t.tint;
   ctx.fill();
   t.icon(ctx, chipX + chip / 2, chipY + chip / 2, t.accent);
@@ -291,24 +373,32 @@ function renderCard(ctx: SKRSContext2D, px: number, py: number, t: Tile): void {
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = INK;
-  ctx.font = `bold 82px ${FONT_FAMILY}`;
-  ctx.fillText(t.title, px + 70, py + ROW_H - 118);
+  ctx.font = `bold 88px ${FONT_FAMILY}`;
+  ctx.fillText(t.title, px + 74, py + ROW_H - 128);
   ctx.fillStyle = SUB;
   ctx.font = `46px ${FONT_FAMILY}`;
-  ctx.fillText(t.subtitle, px + 70, py + ROW_H - 52);
+  ctx.fillText(t.subtitle, px + 74, py + ROW_H - 60);
 }
 
 function renderTab(activeIndex: number): Buffer {
   GlobalFonts.register(readFileSync(FONT_PATH), FONT_FAMILY);
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = CANVAS_BG;
+  const accent = TABS[activeIndex].accent;
+
+  // 由 accent 淡出的垂直漸層,比純色背景有層次
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, withAlpha(accent, 0.16));
+  grad.addColorStop(0.42, withAlpha(accent, 0.04));
+  grad.addColorStop(1, CANVAS_BG);
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  renderTabBar(ctx, activeIndex);
+
   TABS[activeIndex].tiles.forEach((t, i) => {
     const [px, py] = CELL_XY[i];
     renderCard(ctx, px, py, t);
   });
+  renderTabBar(ctx, activeIndex);
   return canvas.toBuffer("image/png");
 }
 
@@ -319,8 +409,10 @@ interface Area {
 }
 
 function areasFor(activeIndex: number): Area[] {
+  const segW = W / TABS.length;
+  const barTop = H - TAB_H;
   const areas: Area[] = TABS.map((tab, i) => ({
-    bounds: { x: i * (W / 2), y: 0, width: W / 2, height: TAB_H },
+    bounds: { x: i * segW, y: barTop, width: segW, height: TAB_H },
     action: { type: "richmenuswitch", richMenuAliasId: tab.alias, data: `switch=${tab.key}` },
   }));
   TABS[activeIndex].tiles.forEach((t, i) => {
@@ -362,7 +454,10 @@ async function applyRichMenus(images: Buffer[]): Promise<void> {
   for (let i = 0; i < TABS.length; i++) {
     const body = {
       size: { width: W, height: H },
-      name: `作品集選單 - ${TABS[i].label}`,
+      // ⚠️ LINE 現在強制要求 `selected` 欄位,不給會回 400
+      // {"message":"must be specified","property":"selected"}
+      selected: false,
+      name: `不說助手 ${i + 1}/${TABS.length} - ${TABS[i].label}`,
       chatBarText: "開啟服務選單",
       areas: areasFor(i),
     };
