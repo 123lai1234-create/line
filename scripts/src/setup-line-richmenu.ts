@@ -225,6 +225,37 @@ const globeIcon: IconFn = (ctx, cx, cy, color) => {
   stroke(ctx, 8, color);
 };
 
+// 惜食特價:購物袋(折扣/即期品)
+const bagIcon: IconFn = (ctx, cx, cy, color) => {
+  // 提把(上半圓)
+  ctx.beginPath();
+  ctx.arc(cx, cy - 28, 40, Math.PI, Math.PI * 2);
+  stroke(ctx, 11, color);
+  // 袋身(上寬下窄的梯形)
+  ctx.beginPath();
+  ctx.moveTo(cx - 78, cy - 14);
+  ctx.lineTo(cx - 62, cy + 80);
+  ctx.lineTo(cx + 62, cy + 80);
+  ctx.lineTo(cx + 78, cy - 14);
+  ctx.closePath();
+  stroke(ctx, 11, color);
+};
+
+// 折扣時段:時鐘
+const clockIcon: IconFn = (ctx, cx, cy, color) => {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 74, 0, Math.PI * 2);
+  stroke(ctx, 11, color);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - 46);
+  stroke(ctx, 11, color);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + 36, cy + 20);
+  stroke(ctx, 11, color);
+};
+
 // ── tabs & tiles ───────────────────────────────────────────────────
 const TABS: Tab[] = [
   {
@@ -237,6 +268,18 @@ const TABS: Tab[] = [
       { title: "台股快訊", subtitle: "大盤 + 熱門股即時報價", accent: "#DC2626", tint: "#FEE2E2", icon: chartIcon, action: { type: "postback", data: "s=stk", displayText: "看台股快訊" } },
       { title: "個股查詢", subtitle: "輸入名稱或代號看走勢圖", accent: "#7C3AED", tint: "#EDE9FE", icon: gridIcon, action: { type: "message", text: "個股查詢" } },
       { title: "音樂欣賞", subtitle: "創作 MV 精選輪播", accent: "#DB2777", tint: "#FCE7F3", icon: musicIcon, action: { type: "message", text: "音樂欣賞" } },
+    ],
+  },
+  {
+    key: "food",
+    label: "惜食特價",
+    accent: "#16A34A",
+    alias: "bot-food",
+    tiles: [
+      { title: "惜食特價", subtitle: "即時折扣 · 4 大超商", accent: "#16A34A", tint: "#DCFCE7", icon: bagIcon, action: { type: "message", text: "惜食特價" } },
+      { title: "折扣時段", subtitle: "今日各時段一覽", accent: "#0EA5E9", tint: "#E0F2FE", icon: clockIcon, action: { type: "message", text: "惜食時段" } },
+      { title: "服務選單", subtitle: "展開全部功能與細節", accent: "#0F172A", tint: "#E2E8F0", icon: gridIcon, action: { type: "message", text: "選單" } },
+      { title: "回到首頁", subtitle: "切回第 1 頁即時資訊", accent: "#D97706", tint: "#FEF3C7", icon: homeIcon, action: { type: "richmenuswitch", richMenuAliasId: "bot-news", data: "switch=news" } },
     ],
   },
   {
@@ -428,71 +471,113 @@ function token(): string {
   return t;
 }
 
-async function applyRichMenus(images: Buffer[]): Promise<void> {
+// ⚠️ 2026-10-30 起改為「增量發布」
+// 舊版 applyRichMenus() 會先把 channel 上**所有** rich menu + alias 刪光再重建,
+//   等於把別處(手動發布、外部工具)建立的頁一起洗掉 —— 惜食頁就是這樣消失的。
+// 現在的規則:既有頁只更新 areas/名稱/圖(保留 richMenuId 與 alias),缺的頁才新建。
+interface AliasInfo {
+  richMenuAliasId: string;
+  richMenuId: string;
+}
+interface RichMenuInfo {
+  richMenuId: string;
+  name: string;
+}
+
+function menuName(i: number, tab: Tab): string {
+  return `不說助手 ${i + 1}/${TABS.length} - ${tab.label}`;
+}
+
+async function apiGet<T>(path: string, auth: Record<string, string>): Promise<T> {
+  const res = await fetch(`${LINE_API}${path}`, { headers: auth });
+  if (!res.ok) throw new Error(`GET ${path} failed ${res.status}: ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
+async function apiSend(path: string, auth: Record<string, string>, init: RequestInit): Promise<Response> {
+  const res = await fetch(`${LINE_API}${path}`, { ...init, headers: { ...auth, ...(init.headers ?? {}) } });
+  if (!res.ok) throw new Error(`${init.method ?? "GET"} ${path} failed ${res.status}: ${await res.text()}`);
+  return res;
+}
+
+async function uploadContent(auth: Record<string, string>, richMenuId: string, png: Buffer): Promise<void> {
+  const res = await fetch(`${LINE_DATA}/richmenu/${richMenuId}/content`, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "image/png" },
+    body: new Uint8Array(png),
+  });
+  if (!res.ok) throw new Error(`upload content ${richMenuId} failed ${res.status}: ${await res.text()}`);
+}
+
+async function publishRichMenus(images: Buffer[]): Promise<void> {
   if (images.length !== TABS.length) throw new Error(`expected ${TABS.length} images, got ${images.length}`);
   const auth = { Authorization: `Bearer ${token()}` };
 
-  const aliasRes = await fetch(`${LINE_API}/richmenu/alias/list`, { headers: auth });
-  if (!aliasRes.ok) throw new Error(`alias list failed ${aliasRes.status}: ${await aliasRes.text()}`);
-  const { aliases = [] } = (await aliasRes.json()) as { aliases?: { richMenuAliasId: string }[] };
-  for (const a of aliases) {
-    const del = await fetch(`${LINE_API}/richmenu/alias/${a.richMenuAliasId}`, { method: "DELETE", headers: auth });
-    if (!del.ok) throw new Error(`delete alias ${a.richMenuAliasId} failed ${del.status}: ${await del.text()}`);
-  }
-  console.log(`Deleted ${aliases.length} existing alias(es)`);
-
-  const listRes = await fetch(`${LINE_API}/richmenu/list`, { headers: auth });
-  if (!listRes.ok) throw new Error(`richmenu list failed ${listRes.status}: ${await listRes.text()}`);
-  const { richmenus = [] } = (await listRes.json()) as { richmenus?: { richMenuId: string }[] };
-  for (const rm of richmenus) {
-    const del = await fetch(`${LINE_API}/richmenu/${rm.richMenuId}`, { method: "DELETE", headers: auth });
-    if (!del.ok) throw new Error(`delete richmenu ${rm.richMenuId} failed ${del.status}: ${await del.text()}`);
-  }
-  console.log(`Deleted ${richmenus.length} existing rich menu(s)`);
+  const aliasList = await apiGet<{ aliases?: AliasInfo[] }>("/richmenu/alias/list", auth);
+  const menuList = await apiGet<{ richmenus?: RichMenuInfo[] }>("/richmenu/list", auth);
+  const aliasToId = new Map((aliasList.aliases ?? []).map((a) => [a.richMenuAliasId, a.richMenuId]));
+  const liveIds = new Set((menuList.richmenus ?? []).map((r) => r.richMenuId));
 
   const ids: string[] = [];
+  const fresh = new Set<number>();
+
+  // Phase 1 — 缺頁才新建(先建好再更新既有頁,避免中途有頁籤指向還不存在的 alias)
   for (let i = 0; i < TABS.length; i++) {
-    const body = {
-      size: { width: W, height: H },
-      // ⚠️ LINE 現在強制要求 `selected` 欄位,不給會回 400
-      // {"message":"must be specified","property":"selected"}
-      selected: false,
-      name: `不說助手 ${i + 1}/${TABS.length} - ${TABS[i].label}`,
-      chatBarText: "開啟服務選單",
-      areas: areasFor(i),
-    };
-    const createRes = await fetch(`${LINE_API}/richmenu`, {
+    const tab = TABS[i];
+    const existing = aliasToId.get(tab.alias);
+    if (existing && liveIds.has(existing)) {
+      ids.push(existing);
+      console.log(`[keep]   ${tab.label} → ${existing}`);
+      continue;
+    }
+    const res = await apiSend("/richmenu", auth, {
       method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        size: { width: W, height: H },
+        // ⚠️ LINE 強制要求 `selected` 欄位,不給會回 400
+        // {"message":"must be specified","property":"selected"}
+        selected: false,
+        name: menuName(i, tab),
+        chatBarText: "開啟服務選單",
+        areas: areasFor(i),
+      }),
     });
-    if (!createRes.ok) throw new Error(`create ${TABS[i].label} failed ${createRes.status}: ${await createRes.text()}`);
-    const { richMenuId } = (await createRes.json()) as { richMenuId: string };
+    const { richMenuId } = (await res.json()) as { richMenuId: string };
+    await uploadContent(auth, richMenuId, images[i]);
+    // alias 若指向已不存在的 rich menu,先刪再重建
+    if (existing) await apiSend(`/richmenu/alias/${tab.alias}`, auth, { method: "DELETE" });
+    await apiSend("/richmenu/alias", auth, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ richMenuAliasId: tab.alias, richMenuId }),
+    });
     ids.push(richMenuId);
-    console.log(`Created ${TABS[i].label}:`, richMenuId);
-
-    const upRes = await fetch(`${LINE_DATA}/richmenu/${richMenuId}/content`, {
-      method: "POST",
-      headers: { ...auth, "Content-Type": "image/png" },
-      body: new Uint8Array(images[i]),
-    });
-    if (!upRes.ok) throw new Error(`upload ${TABS[i].label} failed ${upRes.status}: ${await upRes.text()}`);
-    console.log(`Uploaded ${TABS[i].label} image`);
+    fresh.add(i);
+    console.log(`[new]    ${tab.label} → ${richMenuId} (+ alias ${tab.alias})`);
   }
 
+  // Phase 2 — 既有頁:更新 areas/名稱 + 重新上傳圖(tab bar 從 3 格變 4 格)
   for (let i = 0; i < TABS.length; i++) {
-    const res = await fetch(`${LINE_API}/richmenu/alias`, {
+    if (fresh.has(i)) continue;
+    const id = ids[i];
+    await apiSend(`/richmenu/${id}`, auth, {
       method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ richMenuAliasId: TABS[i].alias, richMenuId: ids[i] }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selected: false,
+        name: menuName(i, TABS[i]),
+        chatBarText: "開啟服務選單",
+        areas: areasFor(i),
+      }),
     });
-    if (!res.ok) throw new Error(`alias ${TABS[i].alias} failed ${res.status}: ${await res.text()}`);
-    console.log(`Alias ${TABS[i].alias} → ${ids[i]}`);
+    await uploadContent(auth, id, images[i]);
+    console.log(`[update] ${TABS[i].label} → ${id}`);
   }
 
-  const defRes = await fetch(`${LINE_API}/user/all/richmenu/${ids[0]}`, { method: "POST", headers: auth });
-  if (!defRes.ok) throw new Error(`set default failed ${defRes.status}: ${await defRes.text()}`);
-  console.log(`Set default rich menu ✅ (${TABS[0].label})`);
+  // Phase 3 — 預設頁 = 第 1 頁
+  await apiSend(`/user/all/richmenu/${ids[0]}`, auth, { method: "POST" });
+  console.log(`Default rich menu → ${TABS[0].label} (${ids[0]}) ✅`);
 }
 
 async function main(): Promise<void> {
@@ -504,7 +589,7 @@ async function main(): Promise<void> {
   });
 
   if (process.env.APPLY === "1") {
-    await applyRichMenus(images);
+    await publishRichMenus(images);
   } else {
     console.log("Preview only. Set APPLY=1 to publish the rich menu to LINE.");
   }

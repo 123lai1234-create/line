@@ -162,6 +162,23 @@ export function formatWindows(windows: DiscountWindow[]): string {
     .join(" · ");
 }
 
+/**
+ * 惜食折扣時段一覽(純文字,可直接複製)。
+ * 與 foodRescue 卡的差別:卡 = 現況(哪幾家正在折);這張 = 時間表 + 每家一行現況。
+ */
+export function foodScheduleText(stores: FoodStore[] = FOOD_STORES, date: Date = new Date()): string {
+  const { minutes, time } = taipeiClock(date);
+  const lines: string[] = ["🕐 惜食折扣時段", `台灣時間 ${time}`, ""];
+  stores.forEach((s) => {
+    const st = foodStatus(s, minutes);
+    lines.push(`${s.emoji} ${s.name}`);
+    lines.push(`   ${s.detail}`);
+    lines.push(`   現在：${st.pill}`);
+    lines.push("");
+  });
+  return lines.join("\n").trimEnd();
+}
+
 /** 現在是台灣時間的幾點(分) + "HH:MM"。 */
 export function taipeiClock(date: Date = new Date()): { minutes: number; time: string } {
   const parts = TPE_FORMATTER.formatToParts(date);

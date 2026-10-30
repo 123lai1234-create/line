@@ -4,7 +4,7 @@ import { stockMenu, stockTrend, resolveStock } from "./stock";
 import { musicMenu } from "./music";
 import { projectsMenu, projectResult } from "./projects";
 import { proteinGuide, proteinHowto, proteinAnalyze, looksLikeProteinSeq } from "./protein";
-import { foodRescue } from "./food";
+import { foodRescue, foodScheduleText } from "./food";
 import { getFoodSchedule } from "./food-source";
 
 const MAIN_MENU_ITEMS: QuickItem[] = [
@@ -433,6 +433,10 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   // 時段盡量抓官方公告(food-source.ts),抓不到退回常態時段。
   if (/惜食|特價|折扣|food|rescue/i.test(text)) {
     const schedule = await getFoodSchedule();
+    // 「時段 / 時間表」→ 純文字一覽(方便複製);其他關鍵字 → 現況卡
+    if (/時段|時間表|schedule/i.test(text)) {
+      return withMenu([textMessage(foodScheduleText(schedule.stores, new Date()))]);
+    }
     return withMenu(foodRescue(schedule.stores, new Date(), {
       liveCount: schedule.liveCount,
       updatedAt: schedule.updatedAt.time,
