@@ -70,11 +70,23 @@ async function handleWebhookEvents(req: Request): Promise<void> {
   }
 }
 
+// LINE Developers Console 的「Verify」按鈕會送 **GET**(空 body、空簽章)來測試 webhook。
+// 沒有這個 handler,按下去只會顯示 Failed(其實 webhook 本身是好的)。
+router.get("/line/webhook", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 router.post("/line/webhook", (req, res) => {
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
   const signature = req.header("x-line-signature");
 
-  if (!rawBody || !verifyLineSignature(rawBody, signature)) {
+  // 空的 POST 也是 LINE 的驗證 ping → 回 200,但不放行任何事件
+  if (!rawBody || rawBody.length === 0) {
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  if (!verifyLineSignature(rawBody, signature)) {
     res.status(401).json({ error: "Invalid signature" });
     return;
   }
