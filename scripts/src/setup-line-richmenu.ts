@@ -471,10 +471,20 @@ function token(): string {
   return t;
 }
 
-// ⚠️ 2026-10-30 起改為「增量發布」
+// ⚠️ 2026-10-30 改為「增量發布」
 // 舊版 applyRichMenus() 會先把 channel 上**所有** rich menu + alias 刪光再重建,
 //   等於把別處(手動發布、外部工具)建立的頁一起洗掉 —— 惜食頁就是這樣消失的。
-// 現在的規則:既有頁只更新 areas/名稱/圖(保留 richMenuId 與 alias),缺的頁才新建。
+//
+// LINE Messaging API **沒有「更新 rich menu」的端點**(POST /v2/bot/richmenu/{id} → 405),
+//   所以 areas 一旦要改(例如 tab bar 由 3 格變 4 格)就只能「新建一頁 + 把 alias 改指向」。
+//   圖可以重傳(POST /richmenu/{id}/content),alias 也可以改指向(POST /richmenu/alias/{aliasId})。
+//
+// 刪舊頁安不安全?顯示優先序是 per-user(API 設定) → API 預設頁 → OA Manager 預設頁。
+//   這個 bot 從沒用過 per-user 端點,所以使用者看的都是預設頁 → 刪掉舊頁不會開天窗。
+//
+// 現在的規則:
+//   • 別人的頁(沒有我們的 alias)一律不碰、不刪
+//   • 我們自己的頁:areas 相同 → 留著、只換圖;areas 不同 → 新建 + alias 改指向,再刪舊頁
 interface AliasInfo {
   richMenuAliasId: string;
   richMenuId: string;
@@ -482,10 +492,27 @@ interface AliasInfo {
 interface RichMenuInfo {
   richMenuId: string;
   name: string;
+  areas?: Area[];
 }
 
 function menuName(i: number, tab: Tab): string {
   return `不說助手 ${i + 1}/${TABS.length} - ${tab.label}`;
+}
+
+/** 穩定序列化(key 排序):LINE 回傳的 action key 順序跟送出時不一定相同。 */
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).sort().map((k) => `${k}:${stable(o[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
+}
+
+/** 既有頁的 areas 是否跟這次要發布的一樣(不一樣就必須重建)。 */
+function sameAreas(current: Area[] | undefined, desired: Area[]): boolean {
+  if (!current || current.length !== desired.length) return false;
+  return stable(current) === stable(desired);
 }
 
 async function apiGet<T>(path: string, auth: Record<string, string>): Promise<T> {
@@ -512,24 +539,39 @@ async function uploadContent(auth: Record<string, string>, richMenuId: string, p
 async function publishRichMenus(images: Buffer[]): Promise<void> {
   if (images.length !== TABS.length) throw new Error(`expected ${TABS.length} images, got ${images.length}`);
   const auth = { Authorization: `Bearer ${token()}` };
+  /** PLAN_ONLY=1 → 只查不改,印出發布計畫 */
+  const planOnly = process.env.PLAN_ONLY === "1";
 
   const aliasList = await apiGet<{ aliases?: AliasInfo[] }>("/richmenu/alias/list", auth);
-  const menuList = await apiGet<{ richmenus?: RichMenuInfo[] }>("/richmenu/list", auth);
   const aliasToId = new Map((aliasList.aliases ?? []).map((a) => [a.richMenuAliasId, a.richMenuId]));
-  const liveIds = new Set((menuList.richmenus ?? []).map((r) => r.richMenuId));
 
   const ids: string[] = [];
-  const fresh = new Set<number>();
+  const replaced: string[] = [];
 
-  // Phase 1 — 缺頁才新建(先建好再更新既有頁,避免中途有頁籤指向還不存在的 alias)
   for (let i = 0; i < TABS.length; i++) {
     const tab = TABS[i];
+    const desired = areasFor(i);
     const existing = aliasToId.get(tab.alias);
-    if (existing && liveIds.has(existing)) {
-      ids.push(existing);
-      console.log(`[keep]   ${tab.label} → ${existing}`);
+
+    // 既有頁的 areas 已經一樣 → 留著(richMenuId 不變),只把圖換成最新版本
+    if (existing) {
+      const info = await apiGet<RichMenuInfo>(`/richmenu/${existing}`, auth);
+      if (sameAreas(info.areas, desired)) {
+        ids.push(existing);
+        console.log(`[keep]    ${tab.label} → ${existing} (areas 相同,只換圖)`);
+        if (!planOnly) await uploadContent(auth, existing, images[i]);
+        continue;
+      }
+    }
+
+    if (planOnly) {
+      console.log(`[replace] ${tab.label} → 新建一頁(alias ${tab.alias},舊頁 ${existing ?? "無"} 的 areas 與新版不同)`);
+      replaced.push(existing ?? "");
+      ids.push("<new>");
       continue;
     }
+
+    // areas 不同(或頁不存在)→ 只能新建:LINE 沒有更新 rich menu 的端點
     const res = await apiSend("/richmenu", auth, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -540,44 +582,47 @@ async function publishRichMenus(images: Buffer[]): Promise<void> {
         selected: false,
         name: menuName(i, tab),
         chatBarText: "開啟服務選單",
-        areas: areasFor(i),
+        areas: desired,
       }),
     });
     const { richMenuId } = (await res.json()) as { richMenuId: string };
     await uploadContent(auth, richMenuId, images[i]);
-    // alias 若指向已不存在的 rich menu,先刪再重建
-    if (existing) await apiSend(`/richmenu/alias/${tab.alias}`, auth, { method: "DELETE" });
-    await apiSend("/richmenu/alias", auth, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ richMenuAliasId: tab.alias, richMenuId }),
-    });
+
+    if (existing) {
+      // alias 保留同一個 id,改指向新頁(使用者端 richmenuswitch 不用改)
+      await apiSend(`/richmenu/alias/${tab.alias}`, auth, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ richMenuId }),
+      });
+      replaced.push(existing);
+      console.log(`[replace] ${tab.label} → ${richMenuId} (alias ${tab.alias} 已改指向,舊頁 ${existing})`);
+    } else {
+      await apiSend("/richmenu/alias", auth, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ richMenuAliasId: tab.alias, richMenuId }),
+      });
+      console.log(`[new]     ${tab.label} → ${richMenuId} (alias ${tab.alias} 已建立)`);
+    }
     ids.push(richMenuId);
-    fresh.add(i);
-    console.log(`[new]    ${tab.label} → ${richMenuId} (+ alias ${tab.alias})`);
   }
 
-  // Phase 2 — 既有頁:更新 areas/名稱 + 重新上傳圖(tab bar 從 3 格變 4 格)
-  for (let i = 0; i < TABS.length; i++) {
-    if (fresh.has(i)) continue;
-    const id = ids[i];
-    await apiSend(`/richmenu/${id}`, auth, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selected: false,
-        name: menuName(i, TABS[i]),
-        chatBarText: "開啟服務選單",
-        areas: areasFor(i),
-      }),
-    });
-    await uploadContent(auth, id, images[i]);
-    console.log(`[update] ${TABS[i].label} → ${id}`);
+  if (planOnly) {
+    console.log(`[plan]    預設頁會設為第 1 頁(${TABS[0].label})`);
+    if (replaced.length) console.log(`[plan]    發布後會刪掉被取代的舊頁:${replaced.filter(Boolean).join(", ")}`);
+    return;
   }
 
-  // Phase 3 — 預設頁 = 第 1 頁
+  // 預設頁 = 第 1 頁(使用者端看到的入口)
   await apiSend(`/user/all/richmenu/${ids[0]}`, auth, { method: "POST" });
   console.log(`Default rich menu → ${TABS[0].label} (${ids[0]}) ✅`);
+
+  // 清理:只刪「我們自己換下來」的舊頁;別人(外部發布)的頁一律不碰
+  for (const old of replaced) {
+    await apiSend(`/richmenu/${old}`, auth, { method: "DELETE" });
+    console.log(`[cleanup] 舊頁 ${old} 已刪除`);
+  }
 }
 
 async function main(): Promise<void> {

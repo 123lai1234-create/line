@@ -19,7 +19,7 @@ const REPO = join(__dirname, "..", "..");
 
 const SVG = readFileSync(join(REPO, "artifacts", "api-server", "public", "bot-ip.svg"), { encoding: null });
 
-function makePng(px) {
+function makePng(px: number) {
   const resvg = new Resvg(SVG, {
     fitTo: { mode: "width", value: px },
     background: "transparent",
@@ -45,7 +45,7 @@ for (const t of targets) {
     console.log(`✓ ${t.path.replace(REPO + "\\", "")} — ${(png.length / 1024).toFixed(1)} KB`);
   } catch (e) {
     ok = false;
-    console.error(`✗ ${t.path}: ${e.message}`);
+    console.error(`✗ ${t.path}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
