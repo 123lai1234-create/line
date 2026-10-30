@@ -12,12 +12,30 @@ description: 超商惜食(即期品)折扣時段卡片 —— 資料來源、時
 ## 程式在哪
 
 - `artifacts/api-server/src/lib/services/food.ts` — 常態時段表 + 狀態計算 + Flex bubble
+  (`foodRescue()` 卡片) + **純文字時段表**(`foodScheduleText()`)
 - `artifacts/api-server/src/lib/services/food-source.ts` — 爬各超商官方公告(30 分鐘快取,抓不到自動退回常態時段)
 - `artifacts/api-server/src/lib/services/router.ts` — 關鍵字 `/惜食|特價|折扣|food|rescue/i`
   → `foodRescue()`；`MAIN_MENU_ITEMS` 有「🛒 惜食特價」quick reply chip；
   `SERVICES` / `TOOLS` 也有惜食 → **bento 主選單的「即時工具」多一格**(`tile(TOOLS[2], true)`)
 
 時段表寫成常數(`FOOD_STORES`)當 fallback,能爬到的以公告為準。
+
+## 兩種回覆(2026-10-30 加)
+
+| 輸入 | 回覆 |
+|---|---|
+| 「惜食特價」/「折扣」 | `foodRescue()` → FOOD RESCUE flex 卡(現況:誰正在折) |
+| 「惜食時段」/「時間表」 | `foodScheduleText()` → **純文字**時間表(每家一行時段 + 現在狀態,可直接複製) |
+
+router 裡「時段 / 時間表 / schedule」要先於卡片判斷(兩者都含「惜食」關鍵字)。
+
+## LINE rich menu 也有惜食頁(2026-10-30 發布)
+
+`bot-food` alias → `richmenu-ae4d8c072244adb9af4985e6f859ef9d`,是 **2/4 惜食特價** 頁
+(即時資訊 / **惜食特價** / AI 專案 / 關於不說),4 個 tile:
+惜食特價、折扣時段、服務選單、回到首頁。
+⚠️ 這頁的 tab bar 是 4 格 → 既有 3 頁必須重建(LINE 沒有更新 rich menu 的端點),
+細節見 `line-rich-menu-tabs.md`。
 
 ## 時段來源:哪些能爬、哪些不能(2026-10 實測)
 
@@ -68,6 +86,14 @@ description: 超商惜食(即期品)折扣時段卡片 —— 資料來源、時
 → **教訓**：這支 channel 的 rich menu 目前沒有「增量新增」路徑，
 要加頁籤一定要改 `setup-line-richmenu.ts` 本身，並且 **先 `node scripts/rich-menu.mjs preview`
 看圖再 `APPLY=1`**。rich menu 發布是不可逆的對外變更。
+
+### ✅ 2026-10-30 已修復
+
+- `setup-line-richmenu.ts` 的 `applyRichMenus()`(全刪重建)已改成 `publishRichMenus()`:
+  別人發布的頁不碰不刪;我們自己的頁 areas 相同就留著、只換圖;不同才新建 + alias 改指向 + 刪舊頁。
+  另有 `PLAN_ONLY=1` 可先預演發布計畫(只查不改)。
+- 惜食頁已重新發布(2/4),alias `bot-food`。
+- 聊天側的「惜食特價」「惜食時段」都已上線並驗證過。
 
 ## 驗證方式（不需 LINE token）
 
