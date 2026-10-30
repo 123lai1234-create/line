@@ -146,6 +146,22 @@ export function foodStatus(store: FoodStore, minutes: number): FoodStatus {
   return { state: "ended", pill: "已結束", ...STATE_STYLE.ended };
 }
 
+/** 把時段組成 "10:00–17:00 65折 · 19:00–19:59 8折 · 20:00–隔日03:00 65折" */
+export function formatWindows(windows: DiscountWindow[]): string {
+  const fmt = (m: number): string => {
+    if (m >= 24 * 60) return "24:00";
+    const h = Math.floor(m / 60) % 24;
+    const mm = m % 60;
+    return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  };
+  return windows
+    .map((w) => {
+      const end = w.end < w.start ? `隔日${fmt(w.end)}` : fmt(w.end);
+      return `${fmt(w.start)}–${end} ${w.label}`;
+    })
+    .join(" · ");
+}
+
 /** 現在是台灣時間的幾點(分) + "HH:MM"。 */
 export function taipeiClock(date: Date = new Date()): { minutes: number; time: string } {
   const parts = TPE_FORMATTER.formatToParts(date);
@@ -181,19 +197,77 @@ function storeRow(store: FoodStore, minutes: number): LineMessage {
   };
 }
 
+export interface FoodRescueMeta {
+  /** 幾家是從官方公告即時解析出來的 */
+  liveCount?: number;
+  /** 資料更新時間 "HH:MM" */
+  updatedAt?: string;
+}
+
 /**
  * 惜食特價卡 — FOOD RESCUE。
  * 標題下方顯示台灣時間 + 目前有幾家在折扣中,每列一家超商的時段與狀態。
+ *
+ * stores: 由 food-source.ts 取得(含公告即時值,抓不到時是常態時段)
  */
-export function foodRescue(date: Date = new Date()): LineMessage[] {
+export function foodRescue(
+  stores: FoodStore[] = FOOD_STORES,
+  date: Date = new Date(),
+  meta: FoodRescueMeta = {},
+): LineMessage[] {
   const { minutes, time } = taipeiClock(date);
-  const activeCount = FOOD_STORES.filter((s) => foodStatus(s, minutes).state === "active").length;
+  const activeCount = stores.filter((s) => foodStatus(s, minutes).state === "active").length;
 
   const rows: LineMessage[] = [];
-  FOOD_STORES.forEach((store, i) => {
+  stores.forEach((store, i) => {
     if (i > 0) rows.push({ type: "separator", color: "#E2E8F0" });
     rows.push(storeRow(store, minutes));
   });
+
+  const body: LineMessage[] = [
+    { type: "text", text: "FOOD RESCUE", size: "xxs", weight: "bold", color: "#94A3B8" },
+    { type: "text", text: "🛒 惜食特價", size: "lg", weight: "bold", color: "#0F172A", margin: "2px" },
+    {
+      type: "box",
+      layout: "horizontal",
+      alignItems: "center",
+      spacing: "sm",
+      contents: [
+        {
+          type: "text",
+          text: `台灣時間 ${time}・${activeCount} 家折扣進行中`,
+          size: "sm",
+          color: "#64748B",
+          wrap: true,
+        },
+        dot(activeCount > 0 ? "#10B981" : "#CBD5E1", "8px"),
+      ],
+    },
+    { type: "separator", margin: "sm", color: "#E2E8F0" },
+    ...rows,
+  ];
+
+  // 資料來源說明(有公告來源時才顯示)
+  if (meta.liveCount && meta.liveCount > 0) {
+    body.push({
+      type: "box",
+      layout: "vertical",
+      backgroundColor: "#F8FAFC",
+      cornerRadius: "10px",
+      paddingAll: "10px",
+      margin: "sm",
+      contents: [
+        {
+          type: "text",
+          text: `時段依官方公告更新（更新於 ${meta.updatedAt ?? time}）`,
+          size: "xxs",
+          color: "#94A3B8",
+          align: "center",
+          wrap: true,
+        },
+      ],
+    });
+  }
 
   return [
     {
@@ -206,28 +280,7 @@ export function foodRescue(date: Date = new Date()): LineMessage[] {
           layout: "vertical",
           spacing: "sm",
           paddingAll: "16px",
-          contents: [
-            { type: "text", text: "FOOD RESCUE", size: "xxs", weight: "bold", color: "#94A3B8" },
-            { type: "text", text: "🛒 惜食特價", size: "lg", weight: "bold", color: "#0F172A", margin: "2px" },
-            {
-              type: "box",
-              layout: "horizontal",
-              alignItems: "center",
-              spacing: "sm",
-              contents: [
-                {
-                  type: "text",
-                  text: `台灣時間 ${time}・${activeCount} 家折扣進行中`,
-                  size: "sm",
-                  color: "#64748B",
-                  wrap: true,
-                },
-                dot(activeCount > 0 ? "#10B981" : "#CBD5E1", "8px"),
-              ],
-            },
-            { type: "separator", margin: "sm", color: "#E2E8F0" },
-            ...rows,
-          ],
+          contents: body,
         },
       },
     },

@@ -5,6 +5,7 @@ import { musicMenu } from "./music";
 import { projectsMenu, projectResult } from "./projects";
 import { proteinGuide, proteinHowto, proteinAnalyze, looksLikeProteinSeq } from "./protein";
 import { foodRescue } from "./food";
+import { getFoodSchedule } from "./food-source";
 
 const MAIN_MENU_ITEMS: QuickItem[] = [
   { label: "🤿 潛水海況", text: "潛水海況" },
@@ -29,13 +30,14 @@ interface Service {
 const SERVICES: Service[] = [
   { emoji: "🤿", title: "潛水海況", desc: "6 大潛點 · 未來 5 天浪高風速", action: "潛水海況", accent: "#0EA5E9", bg: "#E0F2FE" },
   { emoji: "📈", title: "股票走勢", desc: "台股即時報價 · 一個月走勢圖", action: "股票走勢", accent: "#DC2626", bg: "#FEE2E2" },
+  { emoji: "🛒", title: "惜食特價", desc: "超商即期品折扣 · 4 大超商時段", action: "惜食特價", accent: "#16A34A", bg: "#DCFCE7" },
   { emoji: "🎧", title: "音樂欣賞", desc: "創作 MV 精選輪播", action: "音樂欣賞", accent: "#7C3AED", bg: "#EDE9FE" },
   { emoji: "🧬", title: "蛋白質設計", desc: "AI 流程導覽 + 序列分析", action: "蛋白質設計", accent: "#059669", bg: "#D1FAE5" },
   { emoji: "🗂", title: "專案介紹", desc: "生醫 AI、量化研究作品", action: "專案介紹", accent: "#D97706", bg: "#FEF3C7" },
 ];
 
 const S = Object.fromEntries(SERVICES.map((s) => [s.title, s])) as Record<string, Service>;
-const TOOLS = [S["潛水海況"], S["股票走勢"]];
+const TOOLS = [S["潛水海況"], S["股票走勢"], S["惜食特價"]];
 const CREATIONS = [S["音樂欣賞"], S["蛋白質設計"], S["專案介紹"]];
 
 export type MenuStyle = "bento" | "hero" | "seg";
@@ -290,6 +292,7 @@ function bentoBody(botName: string): LineMessage {
       ...greetingBlock(botName),
       sectionLabel("即時工具"),
       tileRow(TOOLS[0], TOOLS[1]),
+      tile(TOOLS[2], true),
       sectionLabel("創作作品"),
       tile(CREATIONS[0], true),
       tileRow(CREATIONS[1], CREATIONS[2]),
@@ -427,8 +430,13 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   }
 
   // 惜食特價:超商即期品折扣時段(7-11 i珍食 / 全家友善食光 / 萊爾富惜福食堂 / OK 午後6折)
+  // 時段盡量抓官方公告(food-source.ts),抓不到退回常態時段。
   if (/惜食|特價|折扣|food|rescue/i.test(text)) {
-    return withMenu(foodRescue());
+    const schedule = await getFoodSchedule();
+    return withMenu(foodRescue(schedule.stores, new Date(), {
+      liveCount: schedule.liveCount,
+      updatedAt: schedule.updatedAt.time,
+    }));
   }
 
   // 明確的「專案 <名稱>」請求 → 專案詳情(需早於蛋白質關鍵字,才能讓「專案 蛋白質」進到報告)
