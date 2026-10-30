@@ -16,6 +16,14 @@ import { dot, pill, type LineMessage } from "./flex";
 
 const TPE = "Asia/Taipei";
 
+// Intl.DateTimeFormat 建一次要載 ICU 時區資料(~80ms),不要每次呼叫都重建。
+const TPE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TPE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 export interface DiscountWindow {
   /** 從 00:00 起算的分鐘數 */
   start: number;
@@ -140,12 +148,7 @@ export function foodStatus(store: FoodStore, minutes: number): FoodStatus {
 
 /** 現在是台灣時間的幾點(分) + "HH:MM"。 */
 export function taipeiClock(date: Date = new Date()): { minutes: number; time: string } {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: TPE,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+  const parts = TPE_FORMATTER.formatToParts(date);
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "00";
   const h = Number.parseInt(get("hour"), 10) % 24;
   const m = Number.parseInt(get("minute"), 10);
