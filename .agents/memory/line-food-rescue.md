@@ -11,26 +11,49 @@ description: 超商惜食(即期品)折扣時段卡片 —— 資料來源、時
 
 ## 程式在哪
 
-- `artifacts/api-server/src/lib/services/food.ts` — 資料表 + 狀態計算 + Flex bubble
+- `artifacts/api-server/src/lib/services/food.ts` — 常態時段表 + 狀態計算 + Flex bubble
+- `artifacts/api-server/src/lib/services/food-source.ts` — 爬各超商官方公告(30 分鐘快取,抓不到自動退回常態時段)
 - `artifacts/api-server/src/lib/services/router.ts` — 關鍵字 `/惜食|特價|折扣|food|rescue/i`
-  → `foodRescue()`；同時在 `MAIN_MENU_ITEMS` 加了「🛒 惜食特價」quick reply chip
+  → `foodRescue()`；`MAIN_MENU_ITEMS` 有「🛒 惜食特價」quick reply chip；
+  `SERVICES` / `TOOLS` 也有惜食 → **bento 主選單的「即時工具」多一格**(`tile(TOOLS[2], true)`)
 
-時段表寫成常數（`FOOD_STORES`），**不爬站**。要改折扣時段只改這張表。
+時段表寫成常數(`FOOD_STORES`)當 fallback,能爬到的以公告為準。
 
-## 時段表（2026-10 現況）
+## 時段來源:哪些能爬、哪些不能(2026-10 實測)
+
+| 超商 | 方案 | 來源 | 狀況 |
+|---|---|---|---|
+| 7-11 | i珍食 | `7-11.com.tw/event/lovefood/index.aspx` | ❌ 時段是**圖片**(kv-min.png / c1.png / c2.png),頁面文字只有「注意事項」→ 用常態時段 |
+| 全家 | 友善食光 | `nevent.family.com.tw/cherishfood/` | ✅ 純文字,parse 得到 |
+| 萊爾富 | 惜福食堂 | `hilife.com.tw` | ❌ SPA,內容走 `/webapi/api` + anti-forgery token → 用常態時段 |
+| OK超商 | 午後6折 | `okmart.com.tw/promotion_reference` | ❌ 促銷頁沒有惜食時段文字(圖片/APP)→ 用常態時段 |
+
+### 全家公告怎麼 parse
+
+原文:
+```
+有效期限於當日24時到期之鮮食商品，自17：00起，享7折優惠
+(部分鮮食商品有效期限為當日17:00，該商品則於10:00起適用友善食光優惠)
+```
+→ 主時段 **17:00–24:00 7折**,另外 **10:00–17:00 7折**(17:00 到期的那批)。
+
+⚠️ 注意:公告裡有全角 `：` 也有半角 `:` → regex 要兩種都收。
+
+### 常態時段(抓不到時用)
 
 | 超商 | 方案 | 時段 |
 |---|---|---|
 | 7-11 | i珍食 | 10:00–17:00 65折 / 19:00–19:59 8折 / 20:00–隔日03:00 65折 |
 | 全家 | 友善食光 | 17:00–24:00 7折 |
-| 萊爾富 | 惜福食堂 | 到期前 6 小時內 7 折（依門市標籤，無固定時段 → 狀態恆為「依標籤」）|
+| 萊爾富 | 惜福食堂 | 到期前 6 小時內 7 折(依門市標籤,無固定時段 → 狀態恆為「依標籤」)|
 | OK超商 | 午後6折 | 16:30–23:00 6折 |
 
-狀態四種：`active`（折扣中）/ `upcoming`（未開始）/ `tag`（依標籤）/ `ended`（已結束）。
+狀態四種:`active`（折扣中）/ `upcoming`（未開始）/ `tag`（依標籤）/ `ended`（已結束）。
 標題列的「N 家折扣進行中」**只算 `active`**（依標籤型不計）。
 
-時間一律用 `Intl.DateTimeFormat` + `Asia/Taipei` 算，不要信容器的 TZ。
-跨日時段（20:00→03:00）用 `start > end` 表示。
+時間一律用 `Intl.DateTimeFormat` + `Asia/Taipei` 算,不要信容器的 TZ。
+跨日時段(20:00→03:00)用 `start > end` 表示。
+`Intl.DateTimeFormat` 建一次要 80ms → **要快取成 module 級常數**,不要每次呼叫重建。
 
 ## ⚠️ 這功能為什麼會「不見」（重要）
 

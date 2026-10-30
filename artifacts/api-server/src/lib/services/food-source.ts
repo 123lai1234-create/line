@@ -17,6 +17,8 @@ import { FOOD_STORES, formatWindows, taipeiClock, type DiscountWindow, type Food
 // ════════════════════════════════════════════════════════════════════════
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
+/** 一家都沒抓到時的短快取(官網可能只是暫時掛掉) */
+const FAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 4000;
 
 export interface StoreSource {
@@ -121,7 +123,8 @@ async function fetchSource(src: StoreSource): Promise<{ windows: DiscountWindow[
  * - 抓不到的店自動退回常態時段
  */
 export async function getFoodSchedule(now: Date = new Date()): Promise<FoodSchedule> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
+  const ttl = cache && cache.data.liveCount > 0 ? CACHE_TTL_MS : FAIL_CACHE_TTL_MS;
+  if (cache && Date.now() - cache.at < ttl) return cache.data;
   if (inflight) return inflight;
 
   inflight = (async () => {
@@ -149,6 +152,7 @@ export async function getFoodSchedule(now: Date = new Date()): Promise<FoodSched
       liveCount: byId.size,
       updatedAt: { minutes, time },
     };
+    // 全部都沒抓到時不要把失敗結果Cache住 30 分鐘 —— 短一點,下次快點重試。
     cache = { at: Date.now(), data };
     inflight = null;
     return data;
