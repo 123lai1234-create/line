@@ -4,6 +4,7 @@ import { stockMenu, stockTrend, resolveStock } from "./stock";
 import { musicMenu } from "./music";
 import { projectsMenu, projectResult } from "./projects";
 import { proteinGuide, proteinHowto, proteinAnalyze, looksLikeProteinSeq } from "./protein";
+import { foodRescue } from "./food";
 
 const MAIN_MENU_ITEMS: QuickItem[] = [
   { label: "🤿 潛水海況", text: "潛水海況" },
@@ -11,6 +12,7 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
   { label: "🎧 音樂欣賞", text: "音樂欣賞" },
   { label: "🧬 蛋白質設計", text: "蛋白質設計" },
   { label: "🗂 專案介紹", text: "專案介紹" },
+  { label: "🛒 惜食特價", text: "惜食特價" },
   { label: "ℹ️ 關於我", text: "關於我" },
 ];
 
@@ -422,6 +424,11 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   if (styleCmd) return mainMenu(ctx.botName, ctx.websiteUrl, styleCmd);
   if (/關於我|about|作者|你是誰|自我介紹/i.test(text)) {
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
+  }
+
+  // 惜食特價:超商即期品折扣時段(7-11 i珍食 / 全家友善食光 / 萊爾富惜福食堂 / OK 午後6折)
+  if (/惜食|特價|折扣|food|rescue/i.test(text)) {
+    return withMenu(foodRescue());
   }
 
   // 明確的「專案 <名稱>」請求 → 專案詳情(需早於蛋白質關鍵字,才能讓「專案 蛋白質」進到報告)
