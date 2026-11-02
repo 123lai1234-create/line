@@ -1,0 +1,36 @@
+name: Broadcast tick — line-bot-api
+
+# 外部 cron 觸發排程廣播,備援 in-process 的 setInterval 排程。
+# in-process 排程在 instance 睡著/重啟時不會跑;這個 workflow 從外面定期
+# 打 POST /api/broadcasts/tick,claim 機制保證兩邊同時跑也不會重複發送。
+#
+# 啟用步驟:
+#   1. 在部署環境設定 BROADCAST_TICK_SECRET(隨機字串),並在 repo
+#      Settings → Secrets → Actions 設定同值的 BROADCAST_TICK_SECRET,
+#      以及 BROADCAST_TICK_URL(例如 https://line-bot-api.onrender.com/api)。
+#   2. 把下面 schedule 區塊的註解取消,workflow 就會每 5 分鐘觸發一次。
+#   3. 若改走外部 cron 為主,把部署環境的 SCHEDULER_ENABLED 設為 "false"。
+# 沒設定 secret 時 tick 入口直接回 503,workflow 失敗是預期的(表示尚未啟用)。
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger broadcast tick
+        env:
+          TICK_URL: ${{ secrets.BROADCAST_TICK_URL }}
+          TICK_SECRET: ${{ secrets.BROADCAST_TICK_SECRET }}
+        run: |
+          if [ -z "$TICK_URL" ] || [ -z "$TICK_SECRET" ]; then
+            echo "BROADCAST_TICK_URL / BROADCAST_TICK_SECRET not set; tick endpoint is disabled until configured."
+            exit 1
+          fi
+          curl -fsS -X POST "$TICK_URL/broadcasts/tick" -H "X-Cron-Secret: $TICK_SECRET"
