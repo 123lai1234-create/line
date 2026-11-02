@@ -101,6 +101,29 @@ export async function getQuotaConsumption(): Promise<{ totalUsage: number } | nu
   return (await res.json()) as { totalUsage: number };
 }
 
+// 廣播前檢查配額,避免發到一半才被 LINE 拒絕。
+// - 回傳 { exhausted: true } 表示已確定用完,呼叫端應直接拒絕這次廣播。
+// - 配額 API 本身查不到時回傳 { exhausted: false }(fail-open):
+//   寧可讓 LINE API 自己擋,也不要因為監控 API 故障就讓排程廣播全部停擺。
+export async function checkBroadcastQuota(): Promise<{ exhausted: boolean; remaining: number | null }> {
+  try {
+    const [quota, consumption] = await Promise.all([getMessageQuota(), getQuotaConsumption()]);
+    if (quota?.type !== "limited" || typeof quota.value !== "number") {
+      return { exhausted: false, remaining: null };
+    }
+    const used = consumption?.totalUsage ?? 0;
+    const remaining = quota.value - used;
+    if (remaining <= 0) {
+      logger.warn({ quota: quota.value, used }, "LINE broadcast quota exhausted");
+      return { exhausted: true, remaining };
+    }
+    return { exhausted: false, remaining };
+  } catch (err) {
+    logger.warn({ err }, "Failed to check LINE broadcast quota, proceeding");
+    return { exhausted: false, remaining: null };
+  }
+}
+
 const LINE_DATA_BASE = "https://api-data.line.me/v2/bot";
 
 export async function listRichMenus(): Promise<{ richMenuId: string }[]> {

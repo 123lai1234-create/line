@@ -8,6 +8,11 @@ import {
   type LineMessage,
   type QuickItem,
 } from "./flex";
+import { cached } from "../cache";
+
+// 海況預報 15 分鐘快取:預報資料本來就是小時級更新,
+// 同一地點連續問不需要每次都打兩支 Open-Meteo API。
+const WEATHER_CACHE_TTL_MS = 15 * 60_000;
 
 const DIVING_URL = "https://donttalk.vercel.app/diving";
 
@@ -61,7 +66,7 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-async function fetchDays(loc: Loc): Promise<DayData[] | null> {
+async function fetchDaysLive(loc: Loc): Promise<DayData[] | null> {
   try {
     const marineUrl =
       `https://marine-api.open-meteo.com/v1/marine?latitude=${loc.lat}&longitude=${loc.lon}` +
@@ -93,6 +98,19 @@ async function fetchDays(loc: Loc): Promise<DayData[] | null> {
       seaTemp: i === 0 ? seaTempNow : null,
       date,
     }));
+  } catch {
+    return null;
+  }
+}
+
+// 快取包裝:抓失敗(null)不寫快取,下一次請求會重試,不會把故障釘住 15 分鐘。
+async function fetchDays(loc: Loc): Promise<DayData[] | null> {
+  try {
+    return await cached(`weather:${loc.id}`, WEATHER_CACHE_TTL_MS, async () => {
+      const days = await fetchDaysLive(loc);
+      if (!days) throw new Error("weather fetch failed");
+      return days;
+    });
   } catch {
     return null;
   }

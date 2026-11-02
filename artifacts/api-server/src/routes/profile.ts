@@ -6,7 +6,7 @@ import { requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
 
-const DEFAULT_PROFILE = {
+export const DEFAULT_PROFILE = {
   // 簡潔化:從「不說的助理」→「不說」(小詠機器人風的 ip 化命名)
   // 改為一行 self-id,搭配「指令清單」(info-first 風格)。
   botName: "不說",

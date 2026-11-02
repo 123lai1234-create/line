@@ -26,7 +26,22 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// CORS:管理員 API 走 cookie 驗證,來源必須收緊。
+// ADMIN_ORIGINS 用逗號分隔,例如 "https://admin.example.com,https://donttalk.vercel.app"。
+// 沒設定時保持舊行為(全開)但啟動時寫警告,避免部署到一半把管理面板擋在外面;
+// 上線前務必在部署環境設定 ADMIN_ORIGINS。
+const adminOrigins = process.env.ADMIN_ORIGINS?.split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+if (!adminOrigins || adminOrigins.length === 0) {
+  logger.warn("ADMIN_ORIGINS is not set, CORS is unrestricted; set it to the admin panel origin");
+}
+app.use(
+  cors({
+    origin: adminOrigins && adminOrigins.length > 0 ? adminOrigins : true,
+    credentials: true,
+  }),
+);
 app.use(cookieParser());
 app.use(
   express.json({

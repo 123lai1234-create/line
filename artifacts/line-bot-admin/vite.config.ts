@@ -49,7 +49,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      // @assets 別名已移除:它指向 repo 根目錄的 attached_assets,
+      // 該目錄已清理且 admin 原始碼沒有任何檔案 import @assets。
     },
     dedupe: ["react", "react-dom"],
   },

@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { desc } from "drizzle-orm";
 import { db, broadcastsTable, type BroadcastRow } from "@workspace/db";
 import { CreateBroadcastBody } from "@workspace/api-zod";
 import { requireAuth } from "../lib/auth";
-import { broadcastMessages } from "../lib/line";
+import { broadcastMessages, checkBroadcastQuota } from "../lib/line";
+import { runDueBroadcasts } from "../lib/scheduler";
 import { buildBroadcastMessages } from "../lib/broadcast-build";
 
 const router: IRouter = Router();
@@ -84,6 +86,15 @@ router.post("/broadcasts", requireAuth, async (req, res) => {
     return;
   }
 
+  // 立即廣播先查配額:管理員當下就在等結果,配額用完直接拒絕,
+  // 不要等 LINE API 拒絕才變成一筆 failed 紀錄。
+  const { exhausted, remaining } = await checkBroadcastQuota();
+  if (exhausted) {
+    res.status(429).json({ error: "LINE 廣播配額已用完,請等下個月配額恢復再發" });
+    return;
+  }
+  req.log.info({ remaining }, "Broadcast quota check passed");
+
   try {
     await broadcastMessages(buildBroadcastMessages(content));
     const [row] = await db
@@ -99,6 +110,37 @@ router.post("/broadcasts", requireAuth, async (req, res) => {
       .values({ ...content, status: "failed", errorMessage })
       .returning();
     res.status(502).json({ error: "Failed to send broadcast" });
+  }
+});
+
+// 外部 cron 觸發排程廣播的入口(給 GitHub Actions 用)。
+// in-process 的 setInterval 在 instance 睡著/重啟時不會跑,外部 cron 是備援。
+// 認證不用管理員 cookie(外部 cron 拿不到 cookie),改用專用 secret header:
+//   POST /api/broadcasts/tick,header X-Cron-Secret: <BROADCAST_TICK_SECRET>
+// BROADCAST_TICK_SECRET 沒設定時此入口直接 503,絕不無驗證開放。
+// claim 機制保證外部 tick 和 in-process tick 同時跑也不會重複發送。
+router.post("/broadcasts/tick", async (req, res) => {
+  const secret = process.env.BROADCAST_TICK_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "Broadcast tick is not configured" });
+    return;
+  }
+  const provided = req.header("x-cron-secret");
+  if (!provided || provided.length !== secret.length) {
+    res.status(401).json({ error: "Not authorized" });
+    return;
+  }
+  // timingSafeEqual 需要等長,上面已先擋掉不等長的情況。
+  if (!timingSafeEqual(Buffer.from(provided), Buffer.from(secret))) {
+    res.status(401).json({ error: "Not authorized" });
+    return;
+  }
+  try {
+    await runDueBroadcasts();
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Broadcast tick failed");
+    res.status(502).json({ error: "Broadcast tick failed" });
   }
 });
 

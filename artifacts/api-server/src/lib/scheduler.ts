@@ -1,16 +1,27 @@
 import { and, eq, lte } from "drizzle-orm";
 import { db, broadcastsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { broadcastMessages } from "./line";
+import { broadcastMessages, checkBroadcastQuota } from "./line";
 import { buildBroadcastMessages } from "./broadcast-build";
 
 const CHECK_INTERVAL_MS = 30_000;
 
-async function runDueBroadcasts(): Promise<void> {
+// 廣播前先查配額:配額用完時不要把 row 標成 failed 就丟掉,
+// 而是留在 scheduled,等下個月配額恢復或管理員手動處理再發。
+// (立即廣播的路徑在 routes/broadcasts.ts 直接拒絕,因為管理員當下就在等結果。)
+export async function runDueBroadcasts(): Promise<void> {
   const due = await db
     .select()
     .from(broadcastsTable)
     .where(and(eq(broadcastsTable.status, "scheduled"), lte(broadcastsTable.scheduledAt, new Date())));
+
+  if (due.length > 0) {
+    const { exhausted } = await checkBroadcastQuota();
+    if (exhausted) {
+      logger.warn({ count: due.length }, "Skipping due broadcasts: LINE quota exhausted");
+      return;
+    }
+  }
 
   for (const row of due) {
     // Atomically claim the row so overlapping ticks / multiple instances can't double-send.

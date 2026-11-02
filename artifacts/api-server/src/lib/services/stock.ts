@@ -7,6 +7,12 @@ import {
   type LineMessage,
   type QuickItem,
 } from "./flex";
+import { cached } from "../cache";
+
+// 批次報價快取:同一組股票 90 秒內重問直接回舊值,不用再打 DB/Yahoo。
+// 股價本來就是分鐘級變動,90 秒舊資料對聊天機器人來說足夠新,
+// 但能把連續追問、群組多人同時問同一檔的成本壓到幾乎為零。
+const QUOTES_CACHE_TTL_MS = 90_000;
 
 const STOCK_URL = "https://donttalk.vercel.app/stock";
 
@@ -451,14 +457,17 @@ async function fetchQuote(sym: string, name: string, code: string): Promise<Quot
 // 批次報價:DB 一次撈全部,沒命中的才個別走 fetchQuote。
 // 這是 stockMenu / stockUpdate 共用的入口。
 async function fetchQuotesBatch(targets: StockDef[]): Promise<Quote[]> {
-  const fromDb = await dbQuotesFor(targets);
-  return Promise.all(
-    targets.map((t) => {
-      const hit = fromDb.get(t.code);
-      if (hit) return hit;
-      return fetchQuote(t.sym, t.name, t.code);
-    }),
-  );
+  const key = `quotes:${targets.map((t) => t.code).join(",")}`;
+  return cached(key, QUOTES_CACHE_TTL_MS, async () => {
+    const fromDb = await dbQuotesFor(targets);
+    return Promise.all(
+      targets.map((t) => {
+        const hit = fromDb.get(t.code);
+        if (hit) return hit;
+        return fetchQuote(t.sym, t.name, t.code);
+      }),
+    );
+  });
 }
 
 // Yahoo 日K → 統一成內部 Candle 形狀,方便與站內資料同型處理。

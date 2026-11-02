@@ -23,5 +23,11 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  startBroadcastScheduler();
+  // 預設開啟 in-process 排程。改走外部 cron(見 .github/workflows/broadcast-tick.yml)
+  // 時把 SCHEDULER_ENABLED 設為 "false",避免兩邊同時跑(雖然 claim 機制已防重複發送)。
+  if (process.env.SCHEDULER_ENABLED !== "false") {
+    startBroadcastScheduler();
+  } else {
+    logger.info("In-process broadcast scheduler disabled (SCHEDULER_ENABLED=false)");
+  }
 });
