@@ -1,4 +1,5 @@
 import { textMessage, quickReply, type LineMessage, type QuickItem } from "./flex";
+import { charactersCarousel, characterDetail } from "./characters";
 import { weatherEntry, weatherFor, locByKeyword } from "./weather";
 import { stockMenu, stockTrend, resolveStock } from "./stock";
 import { musicMenu } from "./music";
@@ -13,6 +14,7 @@ const MAIN_MENU_ITEMS: QuickItem[] = [
   { label: "🎧 音樂欣賞", text: "音樂欣賞" },
   { label: "🧬 蛋白質設計", text: "蛋白質設計" },
   { label: "🗂 專案介紹", text: "專案介紹" },
+  { label: "🎭 人偶", text: "人偶" },
   { label: "🛒 惜食特價", text: "惜食特價" },
   { label: "ℹ️ 關於我", text: "關於我" },
 ];
@@ -429,6 +431,11 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
   }
 
+  // 人偶:五隻 3D 角色輪播(跟網站 3D 頁、右下角浮動人偶同一批)。
+  if (/人偶|角色|玩偶|doll|character/i.test(text)) {
+    return withMenu(charactersCarousel(ctx.websiteUrl));
+  }
+
   // 惜食特價:超商即期品折扣時段(7-11 i珍食 / 全家友善食光 / 萊爾富惜福食堂 / OK 午後6折)
   // 時段盡量抓官方公告(food-source.ts),抓不到退回常態時段。
   if (/惜食|特價|折扣|food|rescue/i.test(text)) {
@@ -485,7 +492,7 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
   // Fallback: gentle nudge to the menu
   return [
     textMessage(
-      "我還不太懂這個問題 🤔 你可以點下面的按鈕,或試著打「潛水海況」「股票走勢」「音樂欣賞」「蛋白質設計」。",
+      "我還不太懂這個問題 🤔 你可以點下面的按鈕,或試著打「潛水海況」「股票走勢」「音樂欣賞」「蛋白質設計」「人偶」。",
       MAIN_MENU_ITEMS,
     ),
   ];
@@ -513,6 +520,12 @@ export async function routePostback(data: string, ctx: RouteContext): Promise<Li
     if (params.get("act") === "howto") return withMenu(proteinHowto());
     const step = Number.parseInt(params.get("step") ?? "1", 10);
     return withMenu(proteinGuide(Number.isFinite(step) ? step : 1));
+  }
+
+  // 人偶:沒 id → 五隻輪播;有 id → 該隻介紹卡。
+  if (svc === "char") {
+    const id = params.get("id");
+    return withMenu(id ? characterDetail(id, ctx.websiteUrl) : charactersCarousel(ctx.websiteUrl));
   }
 
   // 切換主選單樣式(色塊 / 導覽 / 分段清單),分段清單另帶 tab
