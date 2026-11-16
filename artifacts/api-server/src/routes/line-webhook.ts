@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import type { Logger } from "pino";
 import { verifyLineSignature, replyMessages } from "../lib/line";
 import { routeMessage, routePostback, mainMenu } from "../lib/services/router";
+import { charactersWelcome } from "../lib/services/characters";
 import { stockUpdate } from "../lib/services/stock";
 import { ensureProfile, DEFAULT_PROFILE } from "./profile";
 
@@ -38,12 +39,12 @@ async function handleEvent(event: LineWebhookEvent, ctx: ProfileCtx, log: Logger
   try {
     let messages: unknown[] | null | undefined;
     if (event.type === "follow") {
-      // 加好友 → 先 bento 主選單,再 append 一張「即時快報」market update。
-      // 共 2 則 message,符合 LINE Messaging API 5 則上限。
+      // 加好友 → 先一張人偶開場大圖,再 bento 主選單,再 append 一張「即時快報」market update。
+      // 共 3 則 message,符合 LINE Messaging API 5 則上限。
       // 用 stockUpdate()(只發 page 1)而非 stockMenu()(會給 5 則 sector bubbles),
       // 避免 reply token 1 分鐘上限被拖到極限。
       messages = await withTimeout(
-        (async () => [...mainMenu(ctx.botName, ctx.websiteUrl), await stockUpdate()])(),
+        (async () => [...charactersWelcome(ctx.websiteUrl), ...mainMenu(ctx.botName, ctx.websiteUrl), await stockUpdate()])(),
         EVENT_TIMEOUT_MS,
       );
     } else if (event.type === "message" && event.message?.type === "text") {
