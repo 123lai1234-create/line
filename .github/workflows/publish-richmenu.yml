@@ -1,0 +1,80 @@
+name: Publish LINE rich menu
+
+# 手動觸發:發布 scripts/src/setup-line-richmenu.ts 產生的多頁籤 rich menu。
+#
+# token 不進 repo、不用人手貼:workflow 用 RENDER_API_KEY secret 向 Render
+# 讀 line-bot-api 的 env var 拿 LINE_CHANNEL_ACCESS_TOKEN(只在 runner 內用,
+# 並用 ::add-mask:: 遮掉,絕不印出)。
+#
+# 觸發:Actions → "Publish LINE rich menu" → Run workflow
+#
+# 注意:這是對外變更。腳本是增量發布(見 setup-line-richmenu.ts):
+# 新頁建好 → alias 改指向 → 預設頁設為第 1 頁(即時資訊) → 刪被換下的舊頁;
+# 別處(手動/外部工具)建立的 rich menu 一律不碰。
+# 跑之前先確認本機 render 的圖沒問題(預設只出圖不動線上)。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-richmenu
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Fetch LINE token from Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ]; then echo "::error::RENDER_API_KEY secret 沒設"; exit 1; fi
+          if [ -z "${RENDER_SERVICE_ID:-}" ]; then echo "::error::RENDER_SERVICE_ID variable 沒設"; exit 1; fi
+          resp=$(curl -sS -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars")
+          token=$(printf '%s' "$resp" | jq -r '.[] | select(.key=="LINE_CHANNEL_ACCESS_TOKEN") | .value')
+          if [ -z "$token" ] || [ "$token" = "null" ]; then echo "::error::Render 上找不到 LINE_CHANNEL_ACCESS_TOKEN"; exit 1; fi
+          echo "::add-mask::$token"
+          echo "LINE_CHANNEL_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "Token 已取到(已遮罩)"
+      - name: Publish rich menu
+        working-directory: scripts
+        env:
+          APPLY: "1"
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ env.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: pnpm run setup-line-richmenu
+      # 驗證:alias → richMenuId → api-data.line.me 下載圖片,跟本機 render 的圖比 SHA256。
+      # 腳本本身上傳失敗就會 throw;這一步是獨立複驗(線上圖真的是這次 render 的版本)。
+      - name: Verify uploaded images
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ env.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $LINE_CHANNEL_ACCESS_TOKEN"
+          aliases=$(curl -sS -H "$auth" "https://api.line.me/v2/bot/richmenu/alias/list")
+          for key in news food projects about dolls; do
+            id=$(printf '%s' "$aliases" | jq -r --arg a "bot-$key" '.aliases[] | select(.richMenuAliasId==$a) | .richMenuId')
+            if [ -z "$id" ] || [ "$id" = "null" ]; then echo "::error::alias bot-$key 找不到"; exit 1; fi
+            curl -sS -H "$auth" -o "/tmp/dl-$key.png" "https://api-data.line.me/v2/bot/richmenu/$id/content"
+            want=$(sha256sum "scripts/assets/richmenu-$key.png" | cut -d' ' -f1)
+            got=$(sha256sum "/tmp/dl-$key.png" | cut -d' ' -f1)
+            if [ "$want" != "$got" ]; then echo "::error::$key 圖片 SHA256 對不上 (local $want vs line $got)"; exit 1; fi
+            echo "$key ($id) 圖片 SHA256 一致 ✅"
+          done
+          default=$(curl -sS -H "$auth" "https://api.line.me/v2/bot/user/all/richmenu")
+          echo "預設 rich menu: $default"

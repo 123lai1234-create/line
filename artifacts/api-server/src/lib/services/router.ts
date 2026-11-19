@@ -431,7 +431,7 @@ export async function routeMessage(raw: string, ctx: RouteContext): Promise<Line
     return aboutMessage(ctx.introMessage, ctx.websiteUrl);
   }
 
-  // 人偶:五隻 3D 角色輪播(跟網站 3D 頁、右下角浮動人偶同一批)。
+  // 人偶:六隻 3D 角色輪播(跟網站 3D 頁、右下角浮動人偶同一批)。
   if (/人偶|角色|玩偶|doll|character/i.test(text)) {
     return withMenu(charactersCarousel(ctx.websiteUrl));
   }
@@ -522,7 +522,7 @@ export async function routePostback(data: string, ctx: RouteContext): Promise<Li
     return withMenu(proteinGuide(Number.isFinite(step) ? step : 1));
   }
 
-  // 人偶:沒 id → 五隻輪播;有 id → 該隻介紹卡。
+  // 人偶:沒 id → 六隻輪播;有 id → 該隻介紹卡。
   if (svc === "char") {
     const id = params.get("id");
     return withMenu(id ? characterDetail(id, ctx.websiteUrl) : charactersCarousel(ctx.websiteUrl));

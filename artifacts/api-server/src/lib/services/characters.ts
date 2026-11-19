@@ -1,8 +1,9 @@
-// characters.ts — LINE 人偶卡片:五隻 3D 角色的 Flex 輪播 + 單隻介紹 + 開場大圖。
+// characters.ts — LINE 人偶卡片:六隻 3D 角色的 Flex 輪播 + 單隻介紹 + 開場大圖。
 //
-// 第 1 項:主選單「🎭 人偶」→ 五隻輪播(charactersCarousel)、點一隻看介紹(characterDetail)。
+// 第 1 項:主選單「🎭 人偶」→ 六隻輪播(charactersCarousel)、點一隻看介紹(characterDetail)。
 // 第 2 項:加好友 follow 事件的開場大圖(charactersWelcome)——香菇柯基大圖 hero,
-//         點圖或按鈕都進五隻輪播;跟在主選單、即時快報之前送出。
+//         點圖或按鈕都進六隻輪播;跟在主選單、即時快報之前送出。
+// 第 3 項:Rich menu 人偶頁(bot-dolls)——六隻人偶 3×2,點一隻進介紹(s=char&id=<id>)。
 //
 // 圖片是網站上公開的渲染圖(跟 3D 頁、右下角浮動人偶同一批角色):
 //   https://donttalk.vercel.app/images/characters/<id>.png
@@ -57,8 +58,16 @@ const CHARACTERS: Character[] = [
     name: "水晶怪",
     emoji: "💎",
     tagline: "淺藍多面體小怪",
-    desc: "淺藍多面體小怪。黑色圓眼睛、微笑小嘴，有手臂和雙腿，五隻裡最小、最輕的一隻。",
+    desc: "淺藍多面體小怪。黑色圓眼睛、微笑小嘴，有手臂和雙腿，六隻裡最小、最輕的一隻。",
     stats: "Blender 程序化 · 3.3 K 三角面 · 39 KB",
+  },
+  {
+    id: "pig",
+    name: "小豬",
+    emoji: "🐷",
+    tagline: "粉紅身體，橢圓豬鼻垂耳捲尾",
+    desc: "粉紅身體、橢圓豬鼻、垂耳捲尾的小豬，黑珠眼睛帶白高光，六隻裡最新加入的一隻。",
+    stats: "Blender 程序化 · 55.9 K 三角面 · 0.2 MB",
   },
 ];
 
@@ -144,8 +153,8 @@ export function charactersWelcome(websiteUrl: string): LineMessage[] {
           paddingAll: "20px",
           spacing: "none",
           contents: [
-            { type: "text", text: "🎭 五隻人偶在這裡等你", size: "xl", weight: "bold", color: "#0F172A", wrap: true },
-            { type: "text", text: "香菇柯基帶著四位朋友來打招呼，點圖片或按鈕，認識五隻 3D 角色。", size: "sm", color: "#64748B", margin: "sm", wrap: true },
+            { type: "text", text: "🎭 六隻人偶在這裡等你", size: "xl", weight: "bold", color: "#0F172A", wrap: true },
+            { type: "text", text: "香菇柯基帶著五位朋友來打招呼，點圖片或按鈕，認識六隻 3D 角色。", size: "sm", color: "#64748B", margin: "sm", wrap: true },
           ],
         },
         footer: {
@@ -171,7 +180,7 @@ export function charactersCarousel(websiteUrl: string): LineMessage[] {
   return [
     {
       type: "flex",
-      altText: "人偶・五隻 3D 角色",
+      altText: "人偶・六隻 3D 角色",
       contents: { type: "carousel", contents: CHARACTERS.map((c) => charBubble(c, websiteUrl)) },
     },
   ];

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(__dirname, "..", "assets");
@@ -12,8 +12,6 @@ const W = 2500;
 const H = 1686;
 const TAB_H = 264;
 const G = 60;
-const COL_W = (W - G * 3) / 2; // 1160
-const ROW_H = (H - TAB_H - G * 3) / 2; // 621
 
 const CANVAS_BG = "#F8FAFC";
 const CARD_BG = "#FFFFFF";
@@ -34,7 +32,10 @@ interface Tile {
   subtitle: string;
   accent: string;
   tint: string;
-  icon: IconFn;
+  /** 線條 icon(預設);有 image 時改畫人偶 PNG,不畫 icon chip */
+  icon?: IconFn;
+  /** 人偶 PNG(相對於 scripts/assets/,例如 "characters/corgi.png") */
+  image?: string;
   action: Record<string, unknown>;
 }
 
@@ -44,6 +45,8 @@ interface Tab {
   accent: string;
   alias: string;
   tiles: Tile[];
+  /** 每列幾格(預設 2);人偶頁 3 格 × 2 列放六隻 */
+  cols?: number;
 }
 
 // ── drawing helpers ────────────────────────────────────────────────
@@ -306,15 +309,47 @@ const TABS: Tab[] = [
       { title: "官方網站", subtitle: "完整作品集都在這", accent: "#2563EB", tint: "#DBEAFE", icon: globeIcon, action: { type: "uri", uri: WEBSITE_URL } },
     ],
   },
+  {
+    // 第 3 項 Rich menu 人偶圖(2026-11-19):六隻人偶 3×2,點一隻進介紹卡
+    // (postback s=char&id=<id>,router.ts routePostback 已有對應處理)。
+    // 人偶圖跟網站 3D 頁、LINE 輪播同一批 800×800 渲染圖,放 scripts/assets/characters/。
+    key: "dolls",
+    label: "人偶",
+    accent: "#EC4899",
+    alias: "bot-dolls",
+    cols: 3,
+    tiles: [
+      { title: "香菇柯基", subtitle: "網站吉祥物，戴菇帽的柯基", accent: "#D97706", tint: "#FEF3C7", image: "characters/corgi.png", action: { type: "postback", data: "s=char&id=corgi", displayText: "看香菇柯基的介紹" } },
+      { title: "綠機器人", subtitle: "軍綠裝甲，單顆青藍大眼", accent: "#16A34A", tint: "#DCFCE7", image: "characters/robot.png", action: { type: "postback", data: "s=char&id=robot", displayText: "看綠機器人的介紹" } },
+      { title: "哲學家", subtitle: "白髮白鬍，月桂冠老者", accent: "#2563EB", tint: "#DBEAFE", image: "characters/philosopher.png", action: { type: "postback", data: "s=char&id=philosopher", displayText: "看哲學家的介紹" } },
+      { title: "黑貓", subtitle: "黃眼粉鼻，雙臂交叉", accent: "#334155", tint: "#E2E8F0", image: "characters/cat.png", action: { type: "postback", data: "s=char&id=cat", displayText: "看黑貓的介紹" } },
+      { title: "水晶怪", subtitle: "淺藍多面體小怪", accent: "#0EA5E9", tint: "#E0F2FE", image: "characters/crystal.png", action: { type: "postback", data: "s=char&id=crystal", displayText: "看水晶怪的介紹" } },
+      { title: "小豬", subtitle: "粉紅身體，橢圓豬鼻垂耳捲尾", accent: "#EC4899", tint: "#FCE7F3", image: "characters/pig.png", action: { type: "postback", data: "s=char&id=pig", displayText: "看小豬的介紹" } },
+    ],
+  },
 ];
 
 // 卡片從畫面最上方開始排；tab bar 固定在**底部**(thumb reach,也跟截圖一致)
-const CELL_XY: [number, number][] = [
-  [G, G],
-  [G + COL_W + G, G],
-  [G, G + ROW_H + G],
-  [G + COL_W + G, G + ROW_H + G],
-];
+// 每頁格數由 tab.cols 決定(預設 2×2;人偶頁 3×2),格寬/列高依格數動態算,
+// 這樣既有頁的 1160×621 尺寸不變,人偶頁拿到 753×621。
+interface CellLayout {
+  colW: number;
+  rowH: number;
+  xy: [number, number][];
+}
+
+function cellLayout(tab: Tab): CellLayout {
+  const cols = tab.cols ?? 2;
+  const rows = Math.ceil(tab.tiles.length / cols);
+  const colW = (W - G * (cols + 1)) / cols;
+  const rowH = (H - TAB_H - G * (rows + 1)) / rows;
+  const xy: [number, number][] = tab.tiles.map((_, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    return [G + col * (colW + G), G + row * (rowH + G)];
+  });
+  return { colW, rowH, xy };
+}
 
 // ── rendering ──────────────────────────────────────────────────────
 // hex → rgba(r,g,b,a),漸層背景要帶透明度
@@ -384,24 +419,24 @@ function renderTabBar(ctx: SKRSContext2D, activeIndex: number): void {
   });
 }
 
-function renderCard(ctx: SKRSContext2D, px: number, py: number, t: Tile): void {
+function renderCard(ctx: SKRSContext2D, px: number, py: number, colW: number, rowH: number, t: Tile): void {
   // 陰影
   ctx.save();
   ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
   ctx.shadowBlur = 44;
   ctx.shadowOffsetY = 12;
-  rrPath(ctx, px, py, COL_W, ROW_H, 36);
+  rrPath(ctx, px, py, colW, rowH, 36);
   ctx.fillStyle = CARD_BG;
   ctx.fill();
   ctx.restore();
 
-  rrPath(ctx, px, py, COL_W, ROW_H, 36);
+  rrPath(ctx, px, py, colW, rowH, 36);
   ctx.strokeStyle = HAIRLINE;
   ctx.lineWidth = 2;
   ctx.stroke();
 
   // 頂端一條 accent 細線,當成卡片的主色識別
-  rrPath(ctx, px + 36, py, COL_W - 72, 10, 5);
+  rrPath(ctx, px + 36, py, colW - 72, 10, 5);
   ctx.fillStyle = t.accent;
   ctx.fill();
 
@@ -411,23 +446,68 @@ function renderCard(ctx: SKRSContext2D, px: number, py: number, t: Tile): void {
   rrPath(ctx, chipX, chipY, chip, chip, 40);
   ctx.fillStyle = t.tint;
   ctx.fill();
-  t.icon(ctx, chipX + chip / 2, chipY + chip / 2, t.accent);
+  t.icon?.(ctx, chipX + chip / 2, chipY + chip / 2, t.accent);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = INK;
   ctx.font = `bold 88px ${FONT_FAMILY}`;
-  ctx.fillText(t.title, px + 74, py + ROW_H - 128);
+  ctx.fillText(t.title, px + 74, py + rowH - 128);
   ctx.fillStyle = SUB;
   ctx.font = `46px ${FONT_FAMILY}`;
-  ctx.fillText(t.subtitle, px + 74, py + ROW_H - 60);
+  ctx.fillText(t.subtitle, px + 74, py + rowH - 60);
 }
 
-function renderTab(activeIndex: number): Buffer {
+/** 人偶卡:人偶 PNG 置中大圖 + 名字/一句話置中(人偶頁 3×2 專用)。 */
+function renderDollCard(
+  ctx: SKRSContext2D,
+  px: number,
+  py: number,
+  colW: number,
+  rowH: number,
+  t: Tile,
+  img: Parameters<SKRSContext2D["drawImage"]>[0],
+): void {
+  ctx.save();
+  ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+  ctx.shadowBlur = 44;
+  ctx.shadowOffsetY = 12;
+  rrPath(ctx, px, py, colW, rowH, 36);
+  ctx.fillStyle = CARD_BG;
+  ctx.fill();
+  ctx.restore();
+
+  rrPath(ctx, px, py, colW, rowH, 36);
+  ctx.strokeStyle = HAIRLINE;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  rrPath(ctx, px + 36, py, colW - 72, 10, 5);
+  ctx.fillStyle = t.accent;
+  ctx.fill();
+
+  // 人偶圖置中:取 min(格寬-80,列高-240),保持 1:1
+  const size = Math.min(colW - 80, rowH - 240);
+  const ix = px + (colW - size) / 2;
+  const iy = py + 36;
+  ctx.drawImage(img, ix, iy, size, size);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = INK;
+  ctx.font = `bold 68px ${FONT_FAMILY}`;
+  ctx.fillText(t.title, px + colW / 2, py + rowH - 108);
+  ctx.fillStyle = SUB;
+  ctx.font = `40px ${FONT_FAMILY}`;
+  ctx.fillText(t.subtitle, px + colW / 2, py + rowH - 52);
+}
+
+async function renderTab(activeIndex: number): Promise<Buffer> {
   GlobalFonts.register(readFileSync(FONT_PATH), FONT_FAMILY);
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-  const accent = TABS[activeIndex].accent;
+  const tab = TABS[activeIndex];
+  const accent = tab.accent;
 
   // 由 accent 淡出的垂直漸層,比純色背景有層次
   const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -437,10 +517,17 @@ function renderTab(activeIndex: number): Buffer {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  TABS[activeIndex].tiles.forEach((t, i) => {
-    const [px, py] = CELL_XY[i];
-    renderCard(ctx, px, py, t);
-  });
+  const layout = cellLayout(tab);
+  for (let i = 0; i < tab.tiles.length; i++) {
+    const t = tab.tiles[i];
+    const [px, py] = layout.xy[i];
+    if (t.image) {
+      const img = await loadImage(join(ASSETS, t.image));
+      renderDollCard(ctx, px, py, layout.colW, layout.rowH, t, img);
+    } else {
+      renderCard(ctx, px, py, layout.colW, layout.rowH, t);
+    }
+  }
   renderTabBar(ctx, activeIndex);
   return canvas.toBuffer("image/png");
 }
@@ -458,9 +545,10 @@ function areasFor(activeIndex: number): Area[] {
     bounds: { x: i * segW, y: barTop, width: segW, height: TAB_H },
     action: { type: "richmenuswitch", richMenuAliasId: tab.alias, data: `switch=${tab.key}` },
   }));
+  const layout = cellLayout(TABS[activeIndex]);
   TABS[activeIndex].tiles.forEach((t, i) => {
-    const [x, y] = CELL_XY[i];
-    areas.push({ bounds: { x, y, width: COL_W, height: ROW_H }, action: t.action });
+    const [x, y] = layout.xy[i];
+    areas.push({ bounds: { x, y, width: layout.colW, height: layout.rowH }, action: t.action });
   });
   return areas;
 }
@@ -626,7 +714,8 @@ async function publishRichMenus(images: Buffer[]): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const images = TABS.map((_, i) => renderTab(i));
+  const images: Buffer[] = [];
+  for (let i = 0; i < TABS.length; i++) images.push(await renderTab(i));
   TABS.forEach((tab, i) => {
     const p = join(ASSETS, `richmenu-${tab.key}.png`);
     writeFileSync(p, images[i]);
