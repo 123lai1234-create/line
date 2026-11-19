@@ -26,7 +26,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -52,6 +52,27 @@ jobs:
           echo "::add-mask::$token"
           echo "LINE_CHANNEL_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
           echo "Token 已取到(已遮罩)"
+      - name: Wait for Render deploy
+        # 先等這次 push 的 api-server 部署上線,再發布 rich menu:
+        # 人偶頁的按鈕送 postback s=char&id=pig,要新版程式碼才回小豬介紹卡;
+        # 舊版收到 pig 會退回輪播(不會壞,但驗收會以為壞了)。
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            deploys=$(curl -sS -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys?limit=5")
+            status=$(printf '%s' "$deploys" | jq -r --arg sha "$GITHUB_SHA" '.[] | select(.deploy.commit.id==$sha) | .deploy.status' | head -n 1)
+            echo "deploy $GITHUB_SHA 狀態: ${status:-not-found} (第 $i/40 次)"
+            if [ "$status" = "live" ]; then echo "Render 已部署上線 ✅"; exit 0; fi
+            case "$status" in
+              build_failed|update_failed|deactivated) echo "::error::Render 部署失敗: $status"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::等 20 分鐘 Render 還沒 live,先停在這裡(可重跑 workflow)"
+          exit 1
       - name: Publish rich menu
         working-directory: scripts
         env:
